@@ -62,21 +62,13 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Text("Fast capture setup", style = MaterialTheme.typography.headlineSmall)
                         Text(
-                            "Daily use is the floating + tile, home widget, or the “Capture” shortcut — not this screen.",
+                            "Daily use is the floating +, home widget, or the “Capture” shortcut — not this screen.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Button(
-                            onClick = { startActivity(Intent(this@MainActivity, GlyphCaptureActivity::class.java)) },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Glyph capture") }
-                        OutlinedButton(
-                            onClick = { startActivity(Intent(this@MainActivity, GlyphOnboardActivity::class.java)) },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Retrain glyphs (3 samples each)") }
-                        OutlinedButton(
                             onClick = { startActivity(Intent(this@MainActivity, QuickCaptureActivity::class.java)) },
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Type capture (fallback)") }
+                        ) { Text("Type a thought") }
                         Button(
                             onClick = { enableBubble() },
                             modifier = Modifier.fillMaxWidth(),
@@ -86,10 +78,19 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Stop floating tile") }
                         Text(
-                            "Home screen: long-press empty space → Widgets → Capture.\n" +
+                            "Drag the + onto the ✕ at the bottom to hide the bubble. Turn it back on with Enable anytime.\n\n" +
+                                "Home screen: long-press empty space → Widgets → Capture. Stretch it wide for a type-here bar.\n" +
                                 "Or long-press the app icon → Capture.",
                             style = MaterialTheme.typography.bodySmall,
                         )
+                        OutlinedButton(
+                            onClick = { startActivity(Intent(this@MainActivity, GlyphCaptureActivity::class.java)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Glyph capture (optional)") }
+                        OutlinedButton(
+                            onClick = { startActivity(Intent(this@MainActivity, GlyphOnboardActivity::class.java)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Retrain glyphs") }
                         OutlinedTextField(
                             value = url,
                             onValueChange = { url = it },
@@ -161,11 +162,11 @@ class MainActivity : ComponentActivity() {
             return
         }
         BubbleService.start(this)
-        Toast.makeText(this, "Floating + is on — tap it to log", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Floating + is on — tap to log, drag to ✕ to hide", Toast.LENGTH_SHORT).show()
     }
 
     private fun pinDynamicShortcut() {
-        val intent = Intent(this, GlyphCaptureActivity::class.java).apply {
+        val intent = Intent(this, QuickCaptureActivity::class.java).apply {
             action = Intent.ACTION_VIEW
         }
         val shortcut = ShortcutInfoCompat.Builder(this, "quick_capture")

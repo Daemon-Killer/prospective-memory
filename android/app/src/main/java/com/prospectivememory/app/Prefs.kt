@@ -7,7 +7,8 @@ object Prefs {
 
     private fun p(ctx: Context) = ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
-    fun url(ctx: Context) = p(ctx).getString("url", "http://192.168.1.10:8790") ?: ""
+    fun url(ctx: Context) =
+        p(ctx).getString("url", "https://prospective-memory-production.up.railway.app") ?: ""
 
     fun token(ctx: Context) = p(ctx).getString("token", "") ?: ""
 

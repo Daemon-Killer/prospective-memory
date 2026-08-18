@@ -15,30 +15,66 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import kotlin.math.abs
 
 class BubbleService : Service() {
     private var wm: WindowManager? = null
     private var bubble: View? = null
-    private var params: WindowManager.LayoutParams? = null
+    private var trash: TextView? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         startForeground(NOTIF_ID, notification())
+        wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        attachTrash()
         attachBubble()
     }
 
     override fun onDestroy() {
-        bubble?.let { wm?.removeView(it) }
+        detach(bubble)
+        detach(trash)
         bubble = null
+        trash = null
         super.onDestroy()
     }
 
+    private fun overlayType(): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+    }
+
+    private fun attachTrash() {
+        val h = (TRASH_DP * resources.displayMetrics.density).toInt()
+        val tv = TextView(this).apply {
+            text = "✕"
+            textSize = 28f
+            gravity = Gravity.CENTER
+            setTextColor(0xFFFFFFFF.toInt())
+            setBackgroundColor(TRASH_IDLE)
+            setPadding(0, 20, 0, 36)
+            visibility = View.GONE
+        }
+        val lp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            h,
+            overlayType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT,
+        ).apply { gravity = Gravity.BOTTOM }
+        trash = tv
+        wm?.addView(tv, lp)
+    }
+
     private fun attachBubble() {
-        wm = getSystemService(WINDOW_SERVICE) as WindowManager
         val tv = TextView(this).apply {
             text = "+"
             textSize = 28f
@@ -47,16 +83,10 @@ class BubbleService : Service() {
             setPadding(36, 20, 36, 20)
             elevation = 12f
         }
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
-            type,
+            overlayType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT,
         ).apply {
@@ -68,6 +98,7 @@ class BubbleService : Service() {
         var downY = 0f
         var startX = 0
         var startY = 0
+        var dragging = false
         tv.setOnTouchListener { _, ev ->
             when (ev.action) {
                 MotionEvent.ACTION_DOWN -> {
@@ -75,17 +106,34 @@ class BubbleService : Service() {
                     downY = ev.rawY
                     startX = lp.x
                     startY = lp.y
+                    dragging = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    lp.x = startX - (ev.rawX - downX).toInt()
-                    lp.y = startY + (ev.rawY - downY).toInt()
+                    val dx = ev.rawX - downX
+                    val dy = ev.rawY - downY
+                    if (abs(dx) > 12 || abs(dy) > 12) {
+                        dragging = true
+                        showTrash(overTrash(ev.rawY))
+                    }
+                    lp.x = startX - dx.toInt()
+                    lp.y = startY + dy.toInt()
                     wm?.updateViewLayout(tv, lp)
                     true
                 }
-                MotionEvent.ACTION_UP -> {
-                    if (abs(ev.rawX - downX) < 12 && abs(ev.rawY - downY) < 12) {
-                        openCapture()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val hide = dragging && overTrash(ev.rawY)
+                    hideTrash()
+                    when {
+                        hide -> {
+                            Toast.makeText(
+                                this,
+                                "Bubble hidden — enable it again in Capture",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                            stopSelf()
+                        }
+                        !dragging -> openCapture()
                     }
                     true
                 }
@@ -93,15 +141,38 @@ class BubbleService : Service() {
             }
         }
         bubble = tv
-        params = lp
         wm?.addView(tv, lp)
     }
 
-    private fun openCapture() {
-        val i = Intent(this, GlyphCaptureActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+    private fun overTrash(rawY: Float): Boolean {
+        val zone = TRASH_DP * resources.displayMetrics.density
+        return rawY >= resources.displayMetrics.heightPixels - zone
+    }
+
+    private fun showTrash(hot: Boolean) {
+        trash?.visibility = View.VISIBLE
+        trash?.setBackgroundColor(if (hot) TRASH_HOT else TRASH_IDLE)
+    }
+
+    private fun hideTrash() {
+        trash?.visibility = View.GONE
+        trash?.setBackgroundColor(TRASH_IDLE)
+    }
+
+    private fun detach(v: View?) {
+        if (v == null) return
+        try {
+            wm?.removeView(v)
+        } catch (_: Exception) {
         }
-        startActivity(i)
+    }
+
+    private fun openCapture() {
+        startActivity(
+            Intent(this, QuickCaptureActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            },
+        )
     }
 
     private fun notification(): Notification {
@@ -114,13 +185,13 @@ class BubbleService : Service() {
         val open = PendingIntent.getActivity(
             this,
             1,
-            Intent(this, GlyphCaptureActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            Intent(this, QuickCaptureActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         return NotificationCompat.Builder(this, CH)
             .setSmallIcon(R.drawable.ic_launcher)
             .setContentTitle("Capture bubble on")
-            .setContentText("Tap the + tile to log a thought")
+            .setContentText("Tap + to log · drag to ✕ to hide")
             .setContentIntent(open)
             .setOngoing(true)
             .build()
@@ -129,6 +200,9 @@ class BubbleService : Service() {
     companion object {
         private const val CH = "pmem_bubble"
         private const val NOTIF_ID = 42
+        private const val TRASH_DP = 140f
+        private const val TRASH_IDLE = 0xCC5D4037.toInt()
+        private const val TRASH_HOT = 0xE6C62828.toInt()
 
         fun start(ctx: Context) {
             val i = Intent(ctx, BubbleService::class.java)

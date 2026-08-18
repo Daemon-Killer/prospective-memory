@@ -20,7 +20,22 @@ object Inbox {
 
     private const val QUEUE = "queue"
 
-    data class Result(val ok: Boolean, val message: String)
+    data class Result(
+        val ok: Boolean,
+        val message: String,
+        val category: String? = null,
+        val queued: Boolean = false,
+    ) {
+        fun toast(): String {
+            val cat = category?.takeIf { it.isNotBlank() }
+            return when {
+                queued && cat != null -> "Queued · $cat · $message"
+                queued -> "Queued · $message"
+                ok && cat != null -> "$cat · $message"
+                else -> message
+            }
+        }
+    }
 
     suspend fun capture(ctx: Context, raw: String): Result {
         val resolved = Lingo.resolve(raw, Prefs.lingo(ctx))
@@ -29,10 +44,10 @@ object Inbox {
         val posted = post(ctx, expanded)
         if (posted.ok) {
             flush(ctx)
-            return Result(true, expanded)
+            return posted.copy(message = posted.message.ifBlank { expanded })
         }
         enqueue(ctx, expanded)
-        return Result(false, "Queued offline: $expanded")
+        return Result(false, expanded, queued = true)
     }
 
     suspend fun flush(ctx: Context) {
@@ -62,8 +77,12 @@ object Inbox {
         return withContext(Dispatchers.IO) {
             try {
                 http.newCall(req).execute().use { resp ->
-                    if (resp.isSuccessful) Result(true, "Saved")
-                    else Result(false, "HTTP ${resp.code}")
+                    val body = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) return@use Result(false, "HTTP ${resp.code}")
+                    val task = runCatching { JSONObject(body).optJSONObject("task") }.getOrNull()
+                    val cat = task?.optString("category").orEmpty().ifBlank { null }
+                    val txt = task?.optString("text").orEmpty().ifBlank { text }
+                    Result(true, txt, category = cat)
                 }
             } catch (e: Exception) {
                 Result(false, e.message ?: "network")

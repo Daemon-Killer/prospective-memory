@@ -45,9 +45,9 @@ Phone must reach this machine:
 1. Open `android/` in Android Studio (or `gradlew.bat assembleDebug`).
 2. Set **server URL** + **token** on first launch (same token as `pmem token`).
 3. Save **URL + token**. Add lingo lines (`d=dahi lena`).
-4. **Enable floating + tile** (overlay permission) — tap `+` anywhere → type → Enter.
-5. Home screen **widget** (1×1 “log”) or long-press app icon → **Capture**.
-6. Offline posts queue and flush when the network is back.
+4. **Enable floating + tile** (overlay permission) — tap `+` → type → Enter. Drag the `+` onto the bottom **✕** to hide it; Enable turns it back on.
+5. Home screen **widget** (stretch wide for a type-here bar) or long-press app icon → **Capture**. Keyboard opens immediately.
+6. Empty Enter repeats the last lingo chip. Toast shows `category · text`. Offline posts queue and flush when the network is back.
 
 Allow HTTP cleartext for LAN IPs (already in network security config).
 

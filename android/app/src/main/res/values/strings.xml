@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">Capture</string>
-    <string name="widget_desc">One tap to log a thought</string>
+    <string name="widget_desc">Unlock → tap → type. Keyboard opens immediately.</string>
     <string name="shortcut_short">Capture</string>
 </resources>

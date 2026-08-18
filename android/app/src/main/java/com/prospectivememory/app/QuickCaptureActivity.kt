@@ -58,14 +58,20 @@ class QuickCaptureActivity : ComponentActivity() {
                 fun save(raw: String) {
                     val t = raw.trim()
                     if (t.isEmpty()) {
-                        finish()
+                        val last = Prefs.recentKeys(this@QuickCaptureActivity).firstOrNull()
+                        val template = last?.let { Lingo.parse(table)[it] }
+                        when {
+                            last == null -> finish()
+                            template != null && template.contains('$') -> text = "$last "
+                            else -> save(last)
+                        }
                         return
                     }
                     scope.launch {
                         val r = Inbox.capture(this@QuickCaptureActivity, t)
                         Toast.makeText(
                             this@QuickCaptureActivity,
-                            if (r.ok) "Saved: ${r.message}" else r.message,
+                            r.toast(),
                             Toast.LENGTH_SHORT,
                         ).show()
                         finish()
@@ -81,7 +87,11 @@ class QuickCaptureActivity : ComponentActivity() {
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("Thought → Enter", color = Color(0xFFB2DFDB), style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        "Thought → Enter   ·   empty Enter = last chip",
+                        color = Color(0xFFB2DFDB),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
                     OutlinedTextField(
                         value = text,
                         onValueChange = { text = it },
