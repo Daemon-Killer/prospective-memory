@@ -1,0 +1,10 @@
+.venv
+data
+android
+*.apk
+.git
+.pytest_cache
+__pycache__
+docs
+.env
+.env.*
