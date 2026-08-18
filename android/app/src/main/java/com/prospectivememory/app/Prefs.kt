@@ -7,10 +7,24 @@ object Prefs {
 
     private fun p(ctx: Context) = ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
-    fun url(ctx: Context) =
-        p(ctx).getString("url", "https://prospective-memory-production.up.railway.app") ?: ""
+    fun url(ctx: Context): String {
+        val saved = p(ctx).getString("url", "")?.trim().orEmpty()
+        if (saved.isNotEmpty() && !isLan(saved)) return saved.trimEnd('/')
+        return BuildConfig.PMEM_URL.trimEnd('/')
+    }
 
-    fun token(ctx: Context) = p(ctx).getString("token", "") ?: ""
+    fun token(ctx: Context): String {
+        val saved = p(ctx).getString("token", "")?.trim().orEmpty()
+        if (saved.isNotEmpty()) return saved
+        return BuildConfig.PMEM_TOKEN
+    }
+
+    fun hosted(): Boolean = BuildConfig.PMEM_URL.isNotBlank() && BuildConfig.PMEM_TOKEN.isNotBlank()
+
+    private fun isLan(url: String): Boolean {
+        val u = url.lowercase()
+        return "192.168." in u || "10.0.2.2" in u || "127.0.0.1" in u || "localhost" in u
+    }
 
     fun lingo(ctx: Context) = p(ctx).getString("lingo", DEFAULT_LINGO) ?: DEFAULT_LINGO
 

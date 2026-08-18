@@ -35,7 +35,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
+import androidx.lifecycle.lifecycleScope
 import com.prospectivememory.app.ink.InkEntry
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -47,6 +49,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         maybeHandleShare(intent)
         pinDynamicShortcut()
+        lifecycleScope.launch { Inbox.flush(this@MainActivity) }
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
@@ -63,7 +66,11 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Text("Fast capture setup", style = MaterialTheme.typography.headlineSmall)
                         Text(
-                            "Daily use is the floating +, home widget, or the “Capture” shortcut — not this screen.",
+                            if (Prefs.hosted()) {
+                                "Inbox is already wired to the hosted server. Daily use is the floating +, widget, or Capture shortcut — not this screen."
+                            } else {
+                                "Daily use is the floating +, home widget, or the “Capture” shortcut — not this screen."
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Button(
@@ -100,14 +107,14 @@ class MainActivity : ComponentActivity() {
                             value = url,
                             onValueChange = { url = it },
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Server URL") },
+                            label = { Text("Server URL (optional — hosted is baked in)") },
                             singleLine = true,
                         )
                         OutlinedTextField(
                             value = token,
                             onValueChange = { token = it },
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Token") },
+                            label = { Text("Token (optional — baked if empty)") },
                             singleLine = true,
                         )
                         Text(

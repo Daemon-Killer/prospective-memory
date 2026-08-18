@@ -4,6 +4,17 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+fun pmemProp(key: String, fallback: String = ""): String {
+    val file = rootProject.file("local.properties")
+    if (!file.exists()) return fallback
+    val prefix = "$key="
+    return file.readLines()
+        .firstOrNull { it.startsWith(prefix) }
+        ?.substringAfter(prefix)
+        ?.trim()
+        ?: fallback
+}
+
 android {
     namespace = "com.prospectivememory.app"
     compileSdk = 35
@@ -12,8 +23,12 @@ android {
         applicationId = "com.prospectivememory.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6.0-ink"
+        versionCode = 7
+        versionName = "0.6.1-hosted"
+        val hostedUrl = pmemProp("pmem.url", "https://prospective-memory-production.up.railway.app")
+        val hostedToken = pmemProp("pmem.token")
+        buildConfigField("String", "PMEM_URL", "\"${hostedUrl.replace("\"", "\\\"")}\"")
+        buildConfigField("String", "PMEM_TOKEN", "\"${hostedToken.replace("\"", "\\\"")}\"")
     }
 
     buildTypes {
@@ -26,7 +41,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 }
 
 dependencies {
