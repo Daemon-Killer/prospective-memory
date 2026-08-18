@@ -19,7 +19,9 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
+import com.prospectivememory.app.ink.InkEntry
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -132,6 +134,9 @@ class QuickCaptureActivity : ComponentActivity() {
                         color = Color(0x66FFFFFF),
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    TextButton(onClick = { InkEntry.open(this@QuickCaptureActivity) }) {
+                        Text("Write instead")
+                    }
                 }
             }
         }

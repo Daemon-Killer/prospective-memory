@@ -48,6 +48,7 @@ Phone must reach this machine:
 4. **Enable floating + tile** (overlay permission) — tap `+` → type → Enter. Drag the `+` onto the bottom **✕** to hide it; Enable turns it back on.
 5. Home screen **widget** (stretch wide for a type-here bar) or long-press app icon → **Capture**. Keyboard opens immediately.
 6. Empty Enter repeats the last lingo chip. Toast shows `category · text`. Offline posts queue and flush when the network is back.
+7. Optional **Write** (handwriting test) is in `android/.../ink/`. First open downloads an on-device model. Not on the bubble. Drop it via `ink/REMOVE.txt`.
 
 Allow HTTP cleartext for LAN IPs (already in network security config).
 

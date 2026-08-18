@@ -35,6 +35,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
+import com.prospectivememory.app.ink.InkEntry
 
 class MainActivity : ComponentActivity() {
 
@@ -83,6 +84,10 @@ class MainActivity : ComponentActivity() {
                                 "Or long-press the app icon → Capture.",
                             style = MaterialTheme.typography.bodySmall,
                         )
+                        OutlinedButton(
+                            onClick = { InkEntry.open(this@MainActivity) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Write (handwriting test)") }
                         OutlinedButton(
                             onClick = { startActivity(Intent(this@MainActivity, GlyphCaptureActivity::class.java)) },
                             modifier = Modifier.fillMaxWidth(),

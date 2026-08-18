@@ -55,6 +55,19 @@
             android:theme="@style/Theme.PMem" />
 
         <activity
+            android:name=".ink.InkCaptureActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:finishOnTaskLaunch="true"
+            android:launchMode="singleInstance"
+            android:noHistory="true"
+            android:showOnLockScreen="true"
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.PMem.Quick"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".QuickCaptureActivity"
             android:excludeFromRecents="true"
             android:exported="true"

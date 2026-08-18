@@ -12,8 +12,8 @@ android {
         applicationId = "com.prospectivememory.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.5.0"
+        versionCode = 6
+        versionName = "0.6.0-ink"
     }
 
     buildTypes {
@@ -40,5 +40,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Optional handwriting test (delete with app/.../ink/ — see ink/REMOVE.txt)
+    implementation("com.google.mlkit:digital-ink-recognition:19.0.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

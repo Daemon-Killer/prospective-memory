@@ -1,0 +1,8 @@
+To drop handwriting:
+
+1. Delete this folder: android/app/src/main/java/com/prospectivememory/app/ink/
+2. Remove the two InkEntry.open(...) calls (MainActivity, QuickCaptureActivity)
+3. Remove the .ink.InkCaptureActivity block from AndroidManifest.xml
+4. Remove the digital-ink-recognition line from app/build.gradle.kts
+
+Type capture, bubble, widget, and Railway stay.
