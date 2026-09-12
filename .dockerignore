@@ -8,3 +8,5 @@ __pycache__
 docs
 .env
 .env.*
+reminder app/
+node_modules/

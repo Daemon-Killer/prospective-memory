@@ -1,0 +1,12 @@
+﻿services:
+  - type: web
+    name: prospective-memory-api
+    env: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: PMEM_TOKEN
+        generateValue: true
