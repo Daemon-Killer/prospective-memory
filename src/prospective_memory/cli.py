@@ -9,7 +9,15 @@ from rich.table import Table
 
 from prospective_memory import __version__
 from prospective_memory.config import settings
-from prospective_memory.db import capture, list_tasks, set_status, stats
+from prospective_memory.db import (
+    capture,
+    last_whatsapp,
+    latest_otp,
+    list_tasks,
+    missed_summary,
+    set_status,
+    stats,
+)
 from prospective_memory.models import TaskStatus
 
 app = typer.Typer(name="pmem", help="Prospective memory — phone capture + MCP pull.", add_completion=False)
@@ -61,6 +69,49 @@ def done_cmd(task_id: str) -> None:
 @app.command("stats")
 def stats_cmd() -> None:
     console.print_json(json.dumps(stats(), default=str))
+
+
+def _jarvis_remote() -> bool:
+    return bool(settings.resolved_api_url())
+
+
+@app.command("otp")
+def otp_cmd() -> None:
+    """Newest live OTP from the phone (expires in ~3 minutes)."""
+    if _jarvis_remote():
+        from prospective_memory import remote
+
+        payload = remote.latest_otp()
+    else:
+        payload = latest_otp()
+    console.print_json(json.dumps(payload, default=str))
+
+
+@app.command("whatsapp")
+def whatsapp_cmd(
+    sender: Optional[str] = typer.Option(None, "--sender", "-s"),
+    limit: int = typer.Option(10, "--limit", "-n"),
+) -> None:
+    """Recent WhatsApp notification previews."""
+    if _jarvis_remote():
+        from prospective_memory import remote
+
+        payload = remote.last_whatsapp(sender=sender, limit=limit)
+    else:
+        payload = last_whatsapp(sender=sender, limit=limit)
+    console.print_json(json.dumps(payload, default=str))
+
+
+@app.command("missed")
+def missed_cmd(minutes: int = typer.Option(60, "--minutes", "-m")) -> None:
+    """What the phone saw recently (no OTP digits)."""
+    if _jarvis_remote():
+        from prospective_memory import remote
+
+        payload = remote.missed_summary(minutes=minutes)
+    else:
+        payload = missed_summary(minutes=minutes)
+    console.print_json(json.dumps(payload, default=str))
 
 
 @app.command("serve")

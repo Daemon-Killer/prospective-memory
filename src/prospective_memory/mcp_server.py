@@ -11,10 +11,12 @@ from prospective_memory.models import TaskStatus
 mcp = FastMCP(
     "prospective-memory",
     instructions=(
-        "Open-task inbox captured from the user's phone. "
-        "Use list_open_tasks / search_tasks when they ask what to do, buy, or remember. "
-        "Use capture_task if they dictate a thought here. "
-        "Not a notification service — pull only. Not Google Takeout."
+        "Phone-first personal inbox + JARVIS pull. "
+        "Tasks: list_open_tasks / search_tasks / capture_task. "
+        "Phone life: latest_otp (codes expire in ~3 minutes; if redacted, Android hid the digits — tell them to look at the phone), "
+        "last_whatsapp (notification previews, not full chat history), "
+        "missed_summary (what arrived recently). "
+        "The phone owns OTPs, WhatsApp, mail alerts. This is pull-only. Never invent an OTP."
     ),
 )
 
@@ -94,7 +96,7 @@ def drop_task(task_id: str) -> dict[str, Any]:
 
 @mcp.tool()
 def task_stats() -> dict[str, Any]:
-    """Counts by status and open categories."""
+    """Counts by status and open categories. Includes live JARVIS notification counts."""
     if _remote():
         from prospective_memory import remote
 
@@ -106,6 +108,42 @@ def task_stats() -> dict[str, Any]:
     payload["version"] = __version__
     payload["backend"] = settings.resolved_api_url() or "local"
     return payload
+
+
+@mcp.tool()
+def latest_otp() -> dict[str, Any]:
+    """Newest OTP from the phone (SMS/bank/mail/WhatsApp notification). Expires in ~3 minutes. If redacted=true, Android hid the digits — tell the user to look at the phone. Never invent a code."""
+    if _remote():
+        from prospective_memory import remote
+
+        return remote.latest_otp()
+    from prospective_memory.db import latest_otp as _otp
+
+    return _otp()
+
+
+@mcp.tool()
+def last_whatsapp(sender: str | None = None, limit: int = 10) -> dict[str, Any]:
+    """Recent WhatsApp notification previews from the phone. Optional sender name filter (e.g. Mom). This is the notification shade, not full chat history."""
+    if _remote():
+        from prospective_memory import remote
+
+        return remote.last_whatsapp(sender=sender, limit=limit)
+    from prospective_memory.db import last_whatsapp as _wa
+
+    return _wa(sender=sender, limit=limit)
+
+
+@mcp.tool()
+def missed_summary(minutes: int = 60) -> dict[str, Any]:
+    """What arrived on the phone recently: WhatsApp, mail, SMS, OTPs (codes not included). Default last 60 minutes."""
+    if _remote():
+        from prospective_memory import remote
+
+        return remote.missed_summary(minutes=minutes)
+    from prospective_memory.db import missed_summary as _missed
+
+    return _missed(minutes=minutes)
 
 
 def run_stdio() -> None:

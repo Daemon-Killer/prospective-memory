@@ -18,3 +18,20 @@ android/local.properties
 *.apk
 *.iml
 *.log
+
+# Agent logs
+.agents/
+
+# Node & Expo
+node_modules/
+.expo/
+dist/
+coverage/
+npm-debug.*
+*.tsbuildinfo
+
+# Wear OS build outputs
+reminder app/wear/build/
+reminder app/wear/.gradle/
+.gradle/
+build/

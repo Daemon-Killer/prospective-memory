@@ -62,3 +62,29 @@ def stats() -> dict[str, Any]:
     r = httpx.get(f"{_base()}/v1/stats", headers=_headers(), timeout=20.0)
     r.raise_for_status()
     return r.json()
+
+
+def latest_otp() -> dict[str, Any]:
+    r = httpx.get(f"{_base()}/v1/jarvis/otp", headers=_headers(), timeout=20.0)
+    r.raise_for_status()
+    return r.json()
+
+
+def last_whatsapp(sender: str | None = None, limit: int = 10) -> dict[str, Any]:
+    params: dict[str, Any] = {"limit": limit}
+    if sender:
+        params["sender"] = sender
+    r = httpx.get(f"{_base()}/v1/jarvis/whatsapp", headers=_headers(), params=params, timeout=20.0)
+    r.raise_for_status()
+    return r.json()
+
+
+def missed_summary(minutes: int = 60) -> dict[str, Any]:
+    r = httpx.get(
+        f"{_base()}/v1/jarvis/missed",
+        headers=_headers(),
+        params={"minutes": minutes},
+        timeout=20.0,
+    )
+    r.raise_for_status()
+    return r.json()

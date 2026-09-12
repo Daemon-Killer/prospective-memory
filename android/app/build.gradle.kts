@@ -23,8 +23,8 @@ android {
         applicationId = "com.prospectivememory.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.6.1-hosted"
+        versionCode = 8
+        versionName = "0.7.0-jarvis"
         val hostedUrl = pmemProp("pmem.url", "https://prospective-memory-production.up.railway.app")
         val hostedToken = pmemProp("pmem.token")
         buildConfigField("String", "PMEM_URL", "\"${hostedUrl.replace("\"", "\\\"")}\"")

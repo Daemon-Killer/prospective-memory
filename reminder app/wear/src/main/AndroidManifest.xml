@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Hardware Constraint: Declares module as a dedicated Wear OS application -->
+    <uses-feature android:name="android.hardware.type.watch" />
+
+    <!-- Core Wear OS Permissions -->
+    <!-- Somatosensory anti-habituation haptic feedback -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Background alarm & reminder alert execution -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Post notifications on Android 13+ (Wear OS 4 / 5) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@android:drawable/sym_def_app_icon"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.DeviceDefault">
+
+        <!-- Standalone Flag: App functions 100% offline without phone app installed -->
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="true" />
+
+        <!-- Swiss Void Wear OS Launcher Activity (Milestone 1) -->
+        <activity
+            android:name="com.remy.wear.MainActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Watch Face Format (WFF) Version 2 Specification for Wear OS 5 (Milestone 3) -->
+        <meta-data
+            android:name="com.google.wear.watchface.format.version"
+            android:value="2" />
+
+        <!-- ProtoLayout 1.2 Swipe Tile Service (Milestone 2) -->
+        <service
+            android:name="com.remy.wear.surfaces.tile.RemyTileService"
+            android:exported="true"
+            android:label="@string/tile_name"
+            android:description="@string/tile_description"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+        </service>
+
+        <!-- Complication Data Source Service: SHORT_TEXT and RANGED_VALUE (Milestone 2) -->
+        <service
+            android:name="com.remy.wear.surfaces.complication.RemyComplicationService"
+            android:exported="true"
+            android:directBootAware="true"
+            android:label="@string/complication_name"
+            android:permission="com.google.android.wearable.permission.BIND_SUPERVISED_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.watchface.complications.datasource.action.WATCHFACE_COMPLICATION_PROVIDER" />
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,RANGED_VALUE" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
+        </service>
+
+        <!-- Bluetooth P2P Synchronization Listener Service (Milestone 4) -->
+        <service
+            android:name="com.remy.wear.sync.RemyWearableListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:host="*"
+                    android:pathPrefix="/remy"
+                    android:scheme="wear" />
+            </intent-filter>
+        </service>
+
+        <!-- Declarative Watch Face Format (WFF v2) Service (Milestone 3) -->
+        <service
+            android:name="com.google.android.wearable.watchface.declarative.WatchFaceService"
+            android:directBootAware="true"
+            android:exported="true"
+            android:label="@string/watch_face_name"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+                <category android:name="com.google.android.wearable.watchface.category.WATCH_FACE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/watch_face_info" />
+            <meta-data
+                android:name="com.google.wear.watchface.format.version"
+                android:value="2" />
+        </service>
+
+    </application>
+
+</manifest>

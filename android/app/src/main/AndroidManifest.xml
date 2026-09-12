@@ -89,6 +89,30 @@
                 android:value="Always-available thought capture overlay" />
         </service>
 
+        <service
+            android:name=".JarvisListener"
+            android:exported="true"
+            android:label="Capture JARVIS"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.notification.default_filter_types"
+                android:value="conversations|alerting" />
+            <meta-data
+                android:name="android.service.notification.listener"
+                android:resource="@xml/jarvis_listener" />
+        </service>
+
+        <receiver
+            android:name=".CopyOtpReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.prospectivememory.app.COPY_OTP" />
+            </intent-filter>
+        </receiver>
+
         <receiver
             android:name=".CaptureWidget"
             android:exported="true"

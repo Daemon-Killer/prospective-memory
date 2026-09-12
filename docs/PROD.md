@@ -6,6 +6,10 @@ Public inbox so the phone works off home Wi‑Fi.
 |---|---|
 | Health | https://prospective-memory-production.up.railway.app/health |
 | Capture | `POST /v1/capture` header `X-PMEM-TOKEN` |
+| JARVIS events | `POST /v1/jarvis/events` |
+| Live OTP | `GET /v1/jarvis/otp` (expires ~3 min) |
+| WhatsApp | `GET /v1/jarvis/whatsapp` |
+| Missed | `GET /v1/jarvis/missed?minutes=60` |
 | Dashboard | https://railway.com/project/5eb5f4f8-0c48-40a8-aefa-dac09354e511 |
 
 ## Phone

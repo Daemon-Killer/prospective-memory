@@ -5,8 +5,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from prospective_memory import __version__ as APP_VERSION
 from prospective_memory.config import settings
-from prospective_memory.db import capture, list_tasks, set_status, stats
-from prospective_memory.models import CaptureIn, CaptureOut, TaskStatus
+from prospective_memory.db import (
+    capture,
+    ingest_jarvis_events,
+    last_whatsapp,
+    latest_otp,
+    list_tasks,
+    missed_summary,
+    set_status,
+    stats,
+)
+from prospective_memory.models import CaptureIn, CaptureOut, JarvisBatchIn, TaskStatus
 
 
 def _check_token(x_pmem_token: str | None = Header(default=None)) -> None:
@@ -31,7 +40,7 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health() -> dict:
-        return {"ok": True, "version": APP_VERSION}
+        return {"ok": True, "version": APP_VERSION, "jarvis": True}
 
     @app.post("/v1/capture", response_model=CaptureOut, dependencies=[Depends(_check_token)])
     def post_capture(body: CaptureIn) -> CaptureOut:
@@ -65,6 +74,26 @@ def create_app() -> FastAPI:
     @app.get("/v1/stats", dependencies=[Depends(_check_token)])
     def get_stats() -> dict:
         return stats()
+
+    @app.post("/v1/jarvis/events", dependencies=[Depends(_check_token)])
+    def post_jarvis_events(body: JarvisBatchIn) -> dict:
+        raw = [e.model_dump(mode="json") for e in body.events]
+        return ingest_jarvis_events(raw)
+
+    @app.get("/v1/jarvis/otp", dependencies=[Depends(_check_token)])
+    def get_jarvis_otp() -> dict:
+        return latest_otp()
+
+    @app.get("/v1/jarvis/whatsapp", dependencies=[Depends(_check_token)])
+    def get_jarvis_whatsapp(
+        sender: str | None = None,
+        limit: int = Query(10, ge=1, le=50),
+    ) -> dict:
+        return last_whatsapp(sender=sender, limit=limit)
+
+    @app.get("/v1/jarvis/missed", dependencies=[Depends(_check_token)])
+    def get_jarvis_missed(minutes: int = Query(60, ge=1, le=2160)) -> dict:
+        return missed_summary(minutes=minutes)
 
     return app
 

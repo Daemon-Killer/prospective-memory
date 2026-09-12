@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- True AMOLED canvas for sub-1% ambient power consumption -->
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+    <!-- International Orange accent for overdue alerts & countdown indicators -->
+    <color name="international_orange">#FF4500</color>
+    <color name="surface_card">#141414</color>
+    <color name="surface_chip">#222222</color>
+    <color name="text_secondary">#9E9E9E</color>
+    <color name="ambient_stroke">#404040</color>
+</resources>

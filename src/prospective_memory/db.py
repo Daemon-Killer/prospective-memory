@@ -28,6 +28,20 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category);
+CREATE TABLE IF NOT EXISTS jarvis_events (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    package TEXT NOT NULL DEFAULT '',
+    app_label TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    text TEXT NOT NULL DEFAULT '',
+    otp TEXT,
+    posted_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jarvis_kind_posted ON jarvis_events(kind, posted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_jarvis_expires ON jarvis_events(expires_at);
 """
 
 PG_SCHEMA = """
@@ -47,6 +61,20 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category);
+CREATE TABLE IF NOT EXISTS jarvis_events (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    package TEXT NOT NULL DEFAULT '',
+    app_label TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    text TEXT NOT NULL DEFAULT '',
+    otp TEXT,
+    posted_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jarvis_kind_posted ON jarvis_events(kind, posted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_jarvis_expires ON jarvis_events(expires_at);
 """
 
 
@@ -63,11 +91,15 @@ def _pg_connect():
     return conn
 
 
+_PG_BOOTSTRAP = [s.strip() for s in PG_SCHEMA.split(";") if s.strip()]
+
+
 def connect(db_path: Path | None = None):
     if _use_pg() and db_path is None:
         conn = _pg_connect()
         with conn.cursor() as cur:
-            cur.execute(PG_SCHEMA)
+            for stmt in _PG_BOOTSTRAP:
+                cur.execute(stmt)
         conn.commit()
         return conn
     settings.ensure()
@@ -253,4 +285,214 @@ def stats(db_path: Path | None = None) -> dict:
                 db_path=db_path,
             ).fetchall()
         }
-    return {"total": int(total), "by_status": by_status, "open_by_category": by_cat}
+    return {
+        "total": int(total),
+        "by_status": by_status,
+        "open_by_category": by_cat,
+        "jarvis": jarvis_stats(db_path),
+    }
+
+
+def _purge_jarvis(conn: Any, db_path: Path | None = None) -> None:
+    _execute(
+        conn,
+        "DELETE FROM jarvis_events WHERE expires_at < ?",
+        (_now().isoformat(),),
+        db_path,
+    )
+
+
+def ingest_jarvis_events(raw_events: list[dict], db_path: Path | None = None) -> dict:
+    from prospective_memory.jarvis import normalize_event
+
+    accepted = 0
+    otp_live = False
+    with open_db(db_path) as conn:
+        _purge_jarvis(conn, db_path)
+        for raw in raw_events:
+            row = normalize_event(raw if isinstance(raw, dict) else dict(raw))
+            if not row:
+                continue
+            _execute(
+                conn,
+                """
+                INSERT INTO jarvis_events (
+                    id, kind, package, app_label, title, text, otp,
+                    posted_at, expires_at, created_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET
+                    kind=excluded.kind,
+                    package=excluded.package,
+                    app_label=excluded.app_label,
+                    title=excluded.title,
+                    text=excluded.text,
+                    otp=excluded.otp,
+                    posted_at=excluded.posted_at,
+                    expires_at=excluded.expires_at
+                """,
+                (
+                    row["id"],
+                    row["kind"],
+                    row["package"],
+                    row["app_label"],
+                    row["title"],
+                    row["text"],
+                    row["otp"],
+                    row["posted_at"].isoformat(),
+                    row["expires_at"].isoformat(),
+                    row["created_at"].isoformat(),
+                ),
+                db_path,
+            )
+            accepted += 1
+            if row["kind"] == "otp":
+                otp_live = True
+        conn.commit()
+    return {"accepted": accepted, "otp_live": otp_live}
+
+
+def latest_otp(db_path: Path | None = None) -> dict:
+    now = _now()
+    with open_db(db_path) as conn:
+        _purge_jarvis(conn, db_path)
+        conn.commit()
+        cur = _execute(
+            conn,
+            """
+            SELECT * FROM jarvis_events
+            WHERE kind='otp' AND expires_at > ?
+            ORDER BY posted_at DESC LIMIT 1
+            """,
+            (now.isoformat(),),
+            db_path,
+        )
+        row = cur.fetchone()
+    if not row:
+        return {"found": False}
+    posted = datetime.fromisoformat(_get(row, "posted_at"))
+    expires = datetime.fromisoformat(_get(row, "expires_at"))
+    code = _get(row, "otp") or ""
+    age = max(0, int((now - posted).total_seconds()))
+    left = max(0, int((expires - now).total_seconds()))
+    return {
+        "found": True,
+        "code": code or None,
+        "redacted": not bool(code),
+        "from": _get(row, "title") or _get(row, "app_label") or "unknown",
+        "app": _get(row, "app_label") or "",
+        "age_seconds": age,
+        "expires_in_seconds": left,
+        "text": _get(row, "text") or "",
+    }
+
+
+def last_whatsapp(
+    sender: str | None = None,
+    limit: int = 10,
+    db_path: Path | None = None,
+) -> dict:
+    limit = max(1, min(limit, 50))
+    now = _now()
+    filters = ["kind='whatsapp'", "expires_at > ?"]
+    params: list[object] = [now.isoformat()]
+    if sender and sender.strip():
+        filters.append("title LIKE ?")
+        params.append(f"%{sender.strip()}%")
+    where = " AND ".join(filters)
+    with open_db(db_path) as conn:
+        _purge_jarvis(conn, db_path)
+        conn.commit()
+        cur = _execute(
+            conn,
+            f"""
+            SELECT title, text, app_label, posted_at FROM jarvis_events
+            WHERE {where}
+            ORDER BY posted_at DESC LIMIT ?
+            """,
+            [*params, limit],
+            db_path,
+        )
+        rows = cur.fetchall()
+    messages = []
+    for r in rows:
+        posted = datetime.fromisoformat(_get(r, "posted_at"))
+        messages.append(
+            {
+                "sender": _get(r, "title") or "unknown",
+                "text": _get(r, "text") or "",
+                "app": _get(r, "app_label") or "WhatsApp",
+                "posted_at": posted.isoformat(),
+                "age_seconds": max(0, int((now - posted).total_seconds())),
+            }
+        )
+    return {"total": len(messages), "messages": messages}
+
+
+def missed_summary(minutes: int = 60, db_path: Path | None = None) -> dict:
+    minutes = max(1, min(minutes, 36 * 60))
+    now = _now()
+    since = datetime.fromtimestamp(now.timestamp() - minutes * 60, tz=timezone.utc)
+    with open_db(db_path) as conn:
+        _purge_jarvis(conn, db_path)
+        conn.commit()
+        cur = _execute(
+            conn,
+            """
+            SELECT kind, title, text, app_label, posted_at FROM jarvis_events
+            WHERE expires_at > ? AND posted_at >= ?
+            ORDER BY posted_at DESC LIMIT 200
+            """,
+            (now.isoformat(), since.isoformat()),
+            db_path,
+        )
+        rows = cur.fetchall()
+    counts: dict[str, int] = {"otp": 0, "whatsapp": 0, "mail": 0, "sms": 0}
+    groups: dict[tuple[str, str], dict] = {}
+    for r in rows:
+        kind = _get(r, "kind")
+        if kind in counts:
+            counts[kind] += 1
+        title = _get(r, "title") or _get(r, "app_label") or "unknown"
+        key = (kind, title)
+        posted = datetime.fromisoformat(_get(r, "posted_at"))
+        last_text = _get(r, "text") or ""
+        if kind == "otp":
+            last_text = "OTP"
+        g = groups.get(key)
+        if not g:
+            groups[key] = {
+                "kind": kind,
+                "title": title,
+                "count": 1,
+                "last_text": last_text,
+                "last_at": posted.isoformat(),
+            }
+        else:
+            g["count"] += 1
+    highlights = sorted(groups.values(), key=lambda x: x["last_at"], reverse=True)[:20]
+    return {
+        "window_minutes": minutes,
+        "total": len(rows),
+        "counts": counts,
+        "highlights": highlights,
+    }
+
+
+def jarvis_stats(db_path: Path | None = None) -> dict:
+    now = _now()
+    with open_db(db_path) as conn:
+        _purge_jarvis(conn, db_path)
+        conn.commit()
+        live = {
+            _get(r, "kind"): _get(r, "c")
+            for r in _execute(
+                conn,
+                """
+                SELECT kind, COUNT(*) AS c FROM jarvis_events
+                WHERE expires_at > ? GROUP BY kind
+                """,
+                (now.isoformat(),),
+                db_path,
+            ).fetchall()
+        }
+    return {"live_by_kind": {k: int(v) for k, v in live.items()}}

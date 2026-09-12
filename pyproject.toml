@@ -1,7 +1,7 @@
 [project]
 name = "prospective-memory"
-version = "0.5.0"
-description = "3-second phone capture + MCP pull for open tasks. Sibling of google-activity-assistant, not a Takeout feature."
+version = "0.6.0"
+description = "Phone-first capture + JARVIS pull (OTP, WhatsApp, mail) via MCP. Sibling of google-activity-assistant, not a Takeout feature."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"

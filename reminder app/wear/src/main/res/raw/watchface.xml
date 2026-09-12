@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WatchFace width="450" height="450" clipShape="CIRCLE">
+    <!-- Watch Face Metadata -->
+    <Metadata key="CLOCK_TYPE" value="DIGITAL" />
+    <Metadata key="PREVIEW_TIME_DEFAULT" value="10:09:32" />
+
+    <!-- Scene Canvas: Strict Swiss Void AMOLED Black -->
+    <Scene backgroundColor="#ff000000">
+
+        <!-- Complication Slot 0: Remy Reminders Active Countdown / Overdue -->
+        <ComplicationSlot
+            slotId="0"
+            supportedTypes="SHORT_TEXT RANGED_VALUE"
+            x="125" y="70" width="200" height="50">
+            <DefaultProviderPolicy
+                defaultSystemProvider="NONE"
+                defaultSystemProviderType="SHORT_TEXT" />
+            <Complication>
+                <Group x="0" y="0" width="200" height="50">
+                    <PartText x="0" y="0" width="200" height="50">
+                        <Text align="CENTER">
+                            <Font family="SYNC_TO_DEVICE" size="22" weight="500" color="#ffff4500">
+                                <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template>
+                                <!-- Ambient mode variant: dim text to white hairline to ensure OPR < 1.0% -->
+                                <Variant mode="AMBIENT" target="color" value="#ffffffff" />
+                                <Variant mode="AMBIENT" target="weight" value="100" />
+                            </Font>
+                        </Text>
+                    </PartText>
+                </Group>
+            </Complication>
+        </ComplicationSlot>
+
+        <!-- Digital Clock: Central Swiss Tabular Typography -->
+        <DigitalClock x="75" y="165" width="300" height="110">
+            <TimeText format="HH:mm" align="CENTER" x="0" y="0" width="300" height="110">
+                <Font family="SYNC_TO_DEVICE" size="84" weight="600" color="#ffffffff">
+                    <!-- Interactive mode: Heavy Swiss Bold; Ambient mode: Hairline Light -->
+                    <Variant mode="AMBIENT" target="weight" value="100" />
+                    <Variant mode="AMBIENT" target="size" value="76" />
+                </Font>
+            </TimeText>
+        </DigitalClock>
+
+        <!-- Dynamic Urgency Indicator Arc & Indicator Dot -->
+        <PartDraw x="0" y="0" width="450" height="450">
+            <!-- 30-degree focal hairline arc at top bezel -->
+            <Arc centerX="225" centerY="225" width="430" height="430"
+                 startAngle="345" endAngle="15">
+                <Stroke color="#ffff4500" thickness="2">
+                    <Variant mode="AMBIENT" target="thickness" value="1" />
+                    <Variant mode="AMBIENT" target="color" value="#ffffffff" />
+                </Stroke>
+            </Arc>
+
+            <!-- Overdue Alert Indicator Dot -->
+            <Ellipse x="222" y="38" width="6" height="6">
+                <Fill color="#ffff4500" />
+                <Variant mode="AMBIENT" target="color" value="#ffffffff" />
+            </Ellipse>
+        </PartDraw>
+
+        <!-- Secondary Date Sub-line: Visible in Interactive Mode Only -->
+        <PartText x="125" y="285" width="200" height="30">
+            <Text align="CENTER">
+                <Font family="SYNC_TO_DEVICE" size="16" weight="400" color="#ff888888">
+                    <Template>%s<Parameter expression="[DAY_OF_WEEK_SHORT] + ' ' + [DAY_OF_MONTH]"/></Template>
+                    <!-- Suppressed in Ambient Mode to protect battery and guarantee sub-1% OPR -->
+                    <Variant mode="AMBIENT" target="alpha" value="0" />
+                </Font>
+            </Text>
+        </PartText>
+
+    </Scene>
+</WatchFace>

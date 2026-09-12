@@ -45,11 +45,18 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission(),
     ) { /* bubble still works if denied; FGS may be quieter */ }
 
+    private val jarvisOn = mutableStateOf(false)
+    private val lastOtpLine = mutableStateOf("")
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         maybeHandleShare(intent)
         pinDynamicShortcut()
-        lifecycleScope.launch { Inbox.flush(this@MainActivity) }
+        refreshJarvis()
+        lifecycleScope.launch {
+            Inbox.flush(this@MainActivity)
+            JarvisInbox.flush(this@MainActivity)
+        }
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
@@ -57,6 +64,8 @@ class MainActivity : ComponentActivity() {
                     var url by remember { mutableStateOf(Prefs.url(this)) }
                     var token by remember { mutableStateOf(Prefs.token(this)) }
                     var lingo by remember { mutableStateOf(Prefs.lingo(this)) }
+                    val jarvisListening = jarvisOn.value
+                    val otpLine = lastOtpLine.value
 
                     Column(
                         Modifier
@@ -73,6 +82,24 @@ class MainActivity : ComponentActivity() {
                             },
                             style = MaterialTheme.typography.bodyMedium,
                         )
+                        Text("Phone JARVIS", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            if (jarvisListening) {
+                                "Listening for OTPs, WhatsApp, mail, SMS. Laptop Grok can pull them."
+                            } else {
+                                "Off. Android will open notification access — enable Capture JARVIS there."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        if (otpLine.isNotBlank()) {
+                            Text("Last OTP: $otpLine", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Button(
+                            onClick = { enableJarvis() },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(if (jarvisListening) "JARVIS notification access" else "Turn on phone JARVIS")
+                        }
                         Button(
                             onClick = { startActivity(Intent(this@MainActivity, QuickCaptureActivity::class.java)) },
                             modifier = Modifier.fillMaxWidth(),
@@ -141,9 +168,35 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        refreshJarvis()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         maybeHandleShare(intent)
+    }
+
+    private fun refreshJarvis() {
+        jarvisOn.value = JarvisListener.enabled(this)
+        lastOtpLine.value = JarvisStore.otpLine(this)
+    }
+
+    private fun enableJarvis() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                notifPerm.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        Toast.makeText(
+            this,
+            "Enable “Capture JARVIS” / Capture, then come back",
+            Toast.LENGTH_LONG,
+        ).show()
     }
 
     private fun maybeHandleShare(intent: Intent?) {

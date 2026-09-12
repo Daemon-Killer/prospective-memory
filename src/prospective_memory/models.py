@@ -44,3 +44,25 @@ class CaptureIn(BaseModel):
 class CaptureOut(BaseModel):
     task: Task
     inferred: bool
+
+
+class JarvisKind(str, Enum):
+    OTP = "otp"
+    WHATSAPP = "whatsapp"
+    MAIL = "mail"
+    SMS = "sms"
+
+
+class JarvisEventIn(BaseModel):
+    id: str = Field(min_length=4, max_length=64)
+    kind: JarvisKind
+    package: str = Field(default="", max_length=200)
+    app: str = Field(default="", max_length=80)
+    title: str = Field(default="", max_length=200)
+    text: str = Field(default="", max_length=500)
+    otp: str | None = Field(default=None, max_length=16)
+    posted_at: datetime | str | int | None = None
+
+
+class JarvisBatchIn(BaseModel):
+    events: list[JarvisEventIn] = Field(default_factory=list, max_length=40)

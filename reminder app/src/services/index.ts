@@ -1,0 +1,11 @@
+/**
+ * Remy Reminders - Services Index
+ * Milestone 2 Exports
+ */
+
+export * from './storageService';
+export * from './notificationService';
+export * from './backgroundTask';
+
+export { default as storageService } from './storageService';
+export { default as notificationService } from './notificationService';

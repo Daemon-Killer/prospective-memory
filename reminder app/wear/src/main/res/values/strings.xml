@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Remy Reminders</string>
+    <string name="tile_name">Remy Quick Glance</string>
+    <string name="tile_description">Glance active reminders and snooze or complete with one tap.</string>
+    <string name="complication_name">Remy Next Due</string>
+    <string name="action_snooze_15m">+15m</string>
+    <string name="action_snooze_1h">+1h</string>
+    <string name="action_complete">Complete</string>
+    <string name="no_active_reminders">No reminders due</string>
+    <string name="watch_face_name">Remy Swiss Void</string>
+</resources>

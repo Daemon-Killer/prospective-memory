@@ -1,0 +1,87 @@
+﻿/**
+ * Remy Reminders - Core Domain Types & Schema Invariants
+ * Milestone 1 Specification
+ */
+
+export type ReminderStatus = 'pending' | 'snoozed' | 'completed';
+
+export type SnoozePreset =
+  | '15m'
+  | '1h'
+  | 'evening'
+  | 'tomorrow_morning'
+  | 'weekend'
+  | 'custom';
+
+export type CustomIntervalUnit = 'minutes' | 'hours' | 'days';
+
+export interface CustomIntervalInput {
+  value: number;
+  unit: CustomIntervalUnit;
+}
+
+export interface SnoozeCalculationOptions {
+  now?: Date;
+  dueDate?: Date | string | null;
+  customInterval?: CustomIntervalInput;
+  customDate?: Date | string;
+}
+
+export interface Reminder {
+  /** Unique RFC 4122 UUID v4 identifier */
+  id: string;
+
+  /** Title of the reminder (1..255 characters, trimmed) */
+  title: string;
+
+  /** Optional descriptive notes or context */
+  notes?: string | null;
+
+  /** Target alert timestamp formatted as ISO 8601 UTC string */
+  dueDate: string;
+
+  /** Lifecycle state */
+  status: ReminderStatus;
+
+  /** Total number of times this reminder has been snoozed (>= 0) */
+  snoozeCount: number;
+
+  /** ISO 8601 timestamp of most recent snooze event, or null */
+  lastSnoozedAt?: string | null;
+
+  /** ISO 8601 timestamp of record creation */
+  createdAt: string;
+
+  /** ISO 8601 timestamp of last update */
+  updatedAt: string;
+
+  /** ISO 8601 timestamp when marked complete, or null */
+  completedAt?: string | null;
+
+  /** OS-level notification trigger identifier from expo-notifications */
+  notificationId?: string | null;
+}
+
+export interface CreateReminderInput {
+  title: string;
+  notes?: string | null;
+  dueDate: string;
+}
+
+export interface UpdateReminderInput {
+  title?: string;
+  notes?: string | null;
+  dueDate?: string;
+  status?: ReminderStatus;
+}
+
+export interface SnoozeReminderOptions {
+  reminderId: string;
+  targetDate: Date;
+  preset?: SnoozePreset;
+}
+
+export interface ReminderValidationResult {
+  isValid: boolean;
+  errors: string[];
+}
