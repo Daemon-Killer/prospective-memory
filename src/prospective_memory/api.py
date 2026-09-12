@@ -6,16 +6,29 @@ from fastapi.middleware.cors import CORSMiddleware
 from prospective_memory import __version__ as APP_VERSION
 from prospective_memory.config import settings
 from prospective_memory.db import (
+    batch_sync_reminders,
     capture,
+    delete_reminder,
     ingest_jarvis_events,
     last_whatsapp,
     latest_otp,
+    list_reminders,
     list_tasks,
     missed_summary,
     set_status,
     stats,
+    upsert_reminder,
 )
-from prospective_memory.models import CaptureIn, CaptureOut, JarvisBatchIn, TaskStatus
+from prospective_memory.models import (
+    CaptureIn,
+    CaptureOut,
+    JarvisBatchIn,
+    ReminderIn,
+    ReminderOut,
+    ReminderSyncBatchIn,
+    ReminderSyncBatchOut,
+    TaskStatus,
+)
 
 
 def _check_token(x_pmem_token: str | None = Header(default=None)) -> None:
@@ -94,6 +107,32 @@ def create_app() -> FastAPI:
     @app.get("/v1/jarvis/missed", dependencies=[Depends(_check_token)])
     def get_jarvis_missed(minutes: int = Query(60, ge=1, le=2160)) -> dict:
         return missed_summary(minutes=minutes)
+
+    @app.get("/v1/reminders", response_model=list[ReminderOut], dependencies=[Depends(_check_token)])
+    def get_reminders(
+        status: str | None = None,
+        since: str | None = None,
+        include_deleted: bool = False,
+    ) -> list[ReminderOut]:
+        return list_reminders(status=status, since=since, include_deleted=include_deleted)
+
+    @app.post("/v1/reminders", response_model=ReminderOut, dependencies=[Depends(_check_token)])
+    def post_reminder(body: ReminderIn) -> ReminderOut:
+        return upsert_reminder(body)
+
+    @app.post("/v1/reminders/sync", response_model=ReminderSyncBatchOut, dependencies=[Depends(_check_token)])
+    def post_reminders_sync(body: ReminderSyncBatchIn) -> ReminderSyncBatchOut:
+        return batch_sync_reminders(
+            client_reminders=body.reminders,
+            client_sync_time=body.clientSyncTime,
+        )
+
+    @app.delete("/v1/reminders/{reminder_id}", dependencies=[Depends(_check_token)])
+    def remove_reminder(reminder_id: str) -> dict:
+        ok = delete_reminder(reminder_id)
+        if not ok:
+            raise HTTPException(404, "not found")
+        return {"ok": True, "id": reminder_id}
 
     return app
 

@@ -9,7 +9,15 @@ from uuid import uuid4
 
 from prospective_memory.config import settings
 from prospective_memory.infer import infer
-from prospective_memory.models import Task, TaskStatus, TriggerType
+from prospective_memory.models import (
+    ReminderIn,
+    ReminderOut,
+    ReminderSyncBatchIn,
+    ReminderSyncBatchOut,
+    Task,
+    TaskStatus,
+    TriggerType,
+)
 
 SQLITE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -42,6 +50,21 @@ CREATE TABLE IF NOT EXISTS jarvis_events (
 );
 CREATE INDEX IF NOT EXISTS idx_jarvis_kind_posted ON jarvis_events(kind, posted_at DESC);
 CREATE INDEX IF NOT EXISTS idx_jarvis_expires ON jarvis_events(expires_at);
+CREATE TABLE IF NOT EXISTS reminders (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    notes TEXT,
+    due_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    snooze_count INTEGER NOT NULL DEFAULT 0,
+    last_snoozed_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT,
+    is_deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status, due_date ASC);
+CREATE INDEX IF NOT EXISTS idx_reminders_updated ON reminders(updated_at DESC);
 """
 
 PG_SCHEMA = """
@@ -75,6 +98,21 @@ CREATE TABLE IF NOT EXISTS jarvis_events (
 );
 CREATE INDEX IF NOT EXISTS idx_jarvis_kind_posted ON jarvis_events(kind, posted_at DESC);
 CREATE INDEX IF NOT EXISTS idx_jarvis_expires ON jarvis_events(expires_at);
+CREATE TABLE IF NOT EXISTS reminders (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    notes TEXT,
+    due_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    snooze_count INTEGER NOT NULL DEFAULT 0,
+    last_snoozed_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT,
+    is_deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status, due_date ASC);
+CREATE INDEX IF NOT EXISTS idx_reminders_updated ON reminders(updated_at DESC);
 """
 
 
@@ -496,3 +534,144 @@ def jarvis_stats(db_path: Path | None = None) -> dict:
             ).fetchall()
         }
     return {"live_by_kind": {k: int(v) for k, v in live.items()}}
+
+
+def _reminder_row(r: Any) -> ReminderOut:
+    return ReminderOut(
+        id=_get(r, "id"),
+        title=_get(r, "title"),
+        notes=_get(r, "notes"),
+        dueDate=_get(r, "due_date"),
+        status=_get(r, "status") or "pending",
+        snoozeCount=int(_get(r, "snooze_count") or 0),
+        lastSnoozedAt=_get(r, "last_snoozed_at"),
+        createdAt=_get(r, "created_at"),
+        updatedAt=_get(r, "updated_at"),
+        completedAt=_get(r, "completed_at"),
+        isDeleted=bool(_get(r, "is_deleted")),
+    )
+
+
+def list_reminders(
+    status: str | None = None,
+    since: str | None = None,
+    include_deleted: bool = False,
+    db_path: Path | None = None,
+) -> list[ReminderOut]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if not include_deleted:
+        clauses.append("is_deleted = 0")
+    if status:
+        clauses.append("status = ?")
+        params.append(status)
+    if since:
+        clauses.append("updated_at >= ?")
+        params.append(since)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = f"SELECT * FROM reminders {where} ORDER BY updated_at ASC"
+    with open_db(db_path) as conn:
+        rows = _execute(conn, sql, tuple(params), db_path).fetchall()
+        return [_reminder_row(r) for r in rows]
+
+
+def upsert_reminder(rem: ReminderIn, db_path: Path | None = None) -> ReminderOut:
+    sql = """
+    INSERT INTO reminders (
+        id, title, notes, due_date, status, snooze_count, last_snoozed_at,
+        created_at, updated_at, completed_at, is_deleted
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (id) DO UPDATE SET
+        title = EXCLUDED.title,
+        notes = EXCLUDED.notes,
+        due_date = EXCLUDED.due_date,
+        status = EXCLUDED.status,
+        snooze_count = EXCLUDED.snooze_count,
+        last_snoozed_at = EXCLUDED.last_snoozed_at,
+        updated_at = EXCLUDED.updated_at,
+        completed_at = EXCLUDED.completed_at,
+        is_deleted = EXCLUDED.is_deleted
+    WHERE EXCLUDED.updated_at >= reminders.updated_at
+    """
+    params = (
+        rem.id,
+        rem.title,
+        rem.notes,
+        rem.dueDate,
+        rem.status,
+        rem.snoozeCount,
+        rem.lastSnoozedAt,
+        rem.createdAt,
+        rem.updatedAt,
+        rem.completedAt,
+        1 if rem.isDeleted else 0,
+    )
+    with open_db(db_path) as conn:
+        _execute(conn, sql, params, db_path)
+        conn.commit()
+        row = _execute(
+            conn, "SELECT * FROM reminders WHERE id = ?", (rem.id,), db_path
+        ).fetchone()
+        return _reminder_row(row)
+
+
+def batch_sync_reminders(
+    client_reminders: list[ReminderIn],
+    client_sync_time: str | None = None,
+    db_path: Path | None = None,
+) -> ReminderSyncBatchOut:
+    server_time = _now().isoformat()
+    with open_db(db_path) as conn:
+        sql = """
+        INSERT INTO reminders (
+            id, title, notes, due_date, status, snooze_count, last_snoozed_at,
+            created_at, updated_at, completed_at, is_deleted
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (id) DO UPDATE SET
+            title = EXCLUDED.title,
+            notes = EXCLUDED.notes,
+            due_date = EXCLUDED.due_date,
+            status = EXCLUDED.status,
+            snooze_count = EXCLUDED.snooze_count,
+            last_snoozed_at = EXCLUDED.last_snoozed_at,
+            updated_at = EXCLUDED.updated_at,
+            completed_at = EXCLUDED.completed_at,
+            is_deleted = EXCLUDED.is_deleted
+        WHERE EXCLUDED.updated_at >= reminders.updated_at
+        """
+        for rem in client_reminders:
+            params = (
+                rem.id,
+                rem.title,
+                rem.notes,
+                rem.dueDate,
+                rem.status,
+                rem.snoozeCount,
+                rem.lastSnoozedAt,
+                rem.createdAt,
+                rem.updatedAt,
+                rem.completedAt,
+                1 if rem.isDeleted else 0,
+            )
+            _execute(conn, sql, params, db_path)
+        conn.commit()
+
+        if client_sync_time:
+            query = "SELECT * FROM reminders WHERE updated_at >= ? ORDER BY updated_at ASC"
+            rows = _execute(conn, query, (client_sync_time,), db_path).fetchall()
+        else:
+            query = "SELECT * FROM reminders WHERE is_deleted = 0 ORDER BY due_date ASC"
+            rows = _execute(conn, query, (), db_path).fetchall()
+
+        synced = [_reminder_row(r) for r in rows]
+        return ReminderSyncBatchOut(synced=synced, serverSyncTime=server_time)
+
+
+def delete_reminder(reminder_id: str, db_path: Path | None = None) -> bool:
+    now = _now().isoformat()
+    sql = "UPDATE reminders SET is_deleted = 1, updated_at = ? WHERE id = ?"
+    with open_db(db_path) as conn:
+        cur = _execute(conn, sql, (now, reminder_id), db_path)
+        conn.commit()
+        return bool(cur.rowcount and cur.rowcount > 0)
+

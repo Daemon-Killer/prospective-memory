@@ -66,3 +66,41 @@ class JarvisEventIn(BaseModel):
 
 class JarvisBatchIn(BaseModel):
     events: list[JarvisEventIn] = Field(default_factory=list, max_length=40)
+
+
+class ReminderIn(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=1, max_length=500)
+    notes: str | None = Field(default=None, max_length=2000)
+    dueDate: str = Field(min_length=1, max_length=64)
+    status: str = Field(default="pending", max_length=32)
+    snoozeCount: int = Field(default=0, ge=0)
+    lastSnoozedAt: str | None = Field(default=None, max_length=64)
+    createdAt: str = Field(min_length=1, max_length=64)
+    updatedAt: str = Field(min_length=1, max_length=64)
+    completedAt: str | None = Field(default=None, max_length=64)
+    isDeleted: bool = False
+
+
+class ReminderOut(BaseModel):
+    id: str
+    title: str
+    notes: str | None = None
+    dueDate: str
+    status: str = "pending"
+    snoozeCount: int = 0
+    lastSnoozedAt: str | None = None
+    createdAt: str
+    updatedAt: str
+    completedAt: str | None = None
+    isDeleted: bool = False
+
+
+class ReminderSyncBatchIn(BaseModel):
+    reminders: list[ReminderIn] = Field(default_factory=list, max_length=500)
+    clientSyncTime: str | None = None
+
+
+class ReminderSyncBatchOut(BaseModel):
+    synced: list[ReminderOut] = Field(default_factory=list)
+    serverSyncTime: str

@@ -41,6 +41,8 @@ export interface IReminderRepository {
   reconcileActiveReminders(): Promise<Reminder[]>;
   clear(): Promise<void>;
   subscribe(listener: () => void): () => void;
+  applyRemoteSync(synced: Array<Reminder & { isDeleted?: boolean }>): Promise<boolean>;
+  onMutation(listener: () => void): () => void;
 }
 
 /**
@@ -90,6 +92,7 @@ export class StorageService implements IReminderRepository {
   private initPromise: Promise<void> | null = null;
   private flushPromise: Promise<void> = Promise.resolve();
   private listeners: Set<() => void> = new Set();
+  private mutationListeners: Set<() => void> = new Set();
 
   /**
    * Initializes and hydrates the cache from AsyncStorage.
@@ -277,6 +280,7 @@ export class StorageService implements IReminderRepository {
     // Optimistic cache update & immediate UI notification
     this.cache.set(reminder.id, reminder);
     this.notifyListeners();
+    this.notifyMutation();
 
     // Asynchronous write-through flush
     await this.persist();
@@ -346,6 +350,7 @@ export class StorageService implements IReminderRepository {
 
     this.cache.set(id, updated);
     this.notifyListeners();
+    this.notifyMutation();
 
     await this.persist();
 
@@ -382,6 +387,7 @@ export class StorageService implements IReminderRepository {
 
     this.cache.set(id, updated);
     this.notifyListeners();
+    this.notifyMutation();
 
     await this.persist();
 
@@ -423,6 +429,7 @@ export class StorageService implements IReminderRepository {
 
     this.cache.set(id, updated);
     this.notifyListeners();
+    this.notifyMutation();
 
     await this.persist();
 
@@ -470,6 +477,7 @@ export class StorageService implements IReminderRepository {
 
     this.cache.delete(id);
     this.notifyListeners();
+    this.notifyMutation();
 
     await this.persist();
 
@@ -519,6 +527,88 @@ export class StorageService implements IReminderRepository {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  /**
+   * Subscribes a listener to local user mutations (create, update, snooze, toggle, delete)
+   */
+  onMutation(listener: () => void): () => void {
+    this.mutationListeners.add(listener);
+    return () => {
+      this.mutationListeners.delete(listener);
+    };
+  }
+
+  private notifyMutation(): void {
+    this.mutationListeners.forEach((listener) => {
+      try {
+        listener();
+      } catch (e) {
+        console.error('StorageService: Mutation listener error', e);
+      }
+    });
+  }
+
+  /**
+   * Applies changes received from cloud sync using Last-Write-Wins (LWW) conflict resolution
+   */
+  async applyRemoteSync(syncedReminders: Array<Reminder & { isDeleted?: boolean }>): Promise<boolean> {
+    if (!this.initialized) {
+      await this.init();
+    }
+
+    let changed = false;
+
+    for (const item of syncedReminders) {
+      if (item.isDeleted) {
+        if (this.cache.has(item.id)) {
+          this.cache.delete(item.id);
+          changed = true;
+        }
+      } else {
+        const existing = this.cache.get(item.id);
+        if (!existing) {
+          this.cache.set(item.id, {
+            id: item.id,
+            title: item.title,
+            notes: item.notes,
+            dueDate: item.dueDate,
+            status: item.status,
+            snoozeCount: item.snoozeCount,
+            lastSnoozedAt: item.lastSnoozedAt,
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt,
+            completedAt: item.completedAt,
+            notificationId: null,
+          });
+          changed = true;
+        } else {
+          const serverTime = new Date(item.updatedAt).getTime();
+          const localTime = new Date(existing.updatedAt).getTime();
+          if (serverTime >= localTime) {
+            this.cache.set(item.id, {
+              ...existing,
+              title: item.title,
+              notes: item.notes,
+              dueDate: item.dueDate,
+              status: item.status,
+              snoozeCount: item.snoozeCount,
+              lastSnoozedAt: item.lastSnoozedAt,
+              updatedAt: item.updatedAt,
+              completedAt: item.completedAt,
+            });
+            changed = true;
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      this.notifyListeners();
+      await this.persist();
+    }
+
+    return changed;
   }
 
   /**

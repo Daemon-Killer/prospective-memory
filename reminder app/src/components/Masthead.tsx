@@ -1,9 +1,11 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ThemeColors, ThemeMode } from '../types/theme';
 import { formatMastheadDate } from '../utils/dateFormatting';
 import { useTheme } from '../theme/ThemeContext';
 import { ThemeToggle } from './ThemeToggle';
+import { CloudSyncModal } from './CloudSyncModal';
+import { cloudSyncService, CloudSyncState } from '../services/cloudSyncService';
 
 export interface MastheadProps {
   activeCount: number;
@@ -31,7 +33,33 @@ export const Masthead: React.FC<MastheadProps> = ({
   const themeMode = propMode ?? theme.mode;
   const onCycleTheme = propCycleTheme ?? theme.cycleTheme;
 
+  const [modalVisible, setModalVisible] = useState<boolean>(false);
+  const [syncState, setSyncState] = useState<CloudSyncState>(cloudSyncService.getState());
+
+  useEffect(() => {
+    cloudSyncService.init();
+    const unsubscribe = cloudSyncService.subscribe((state) => {
+      setSyncState(state);
+    });
+    return unsubscribe;
+  }, []);
+
   const dateFormatted = formatMastheadDate(currentDate);
+
+  const getDotColor = (state: CloudSyncState) => {
+    switch (state) {
+      case 'syncing':
+        return '#3B82F6';
+      case 'synced':
+        return '#10B981';
+      case 'error':
+        return '#EF4444';
+      case 'disabled':
+        return '#6B7280';
+      default:
+        return '#10B981';
+    }
+  };
 
   return (
     <View
@@ -49,12 +77,32 @@ export const Masthead: React.FC<MastheadProps> = ({
         <Text style={[styles.brandTitle, { color: themeColors.textMuted }]}>
           REMY // PROSPECTIVE MEMORY
         </Text>
-        <ThemeToggle
-          mode={themeMode}
-          colors={themeColors}
-          onCycle={onCycleTheme}
-        />
+        <View style={styles.utilityActions}>
+          <TouchableOpacity
+            testID="cloud-sync-btn"
+            style={[
+              styles.cloudBtn,
+              { borderColor: themeColors.border, backgroundColor: themeColors.surface },
+            ]}
+            onPress={() => setModalVisible(true)}
+            accessibilityLabel="Cloud Sync Settings"
+          >
+            <View style={[styles.cloudDot, { backgroundColor: getDotColor(syncState) }]} />
+            <Text style={[styles.cloudText, { color: themeColors.textMuted }]}>CLOUD</Text>
+          </TouchableOpacity>
+          <ThemeToggle
+            mode={themeMode}
+            colors={themeColors}
+            onCycle={onCycleTheme}
+          />
+        </View>
       </View>
+
+      <CloudSyncModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        colors={themeColors}
+      />
 
       {/* Massive Architectural Date Header */}
       <Text
@@ -128,6 +176,30 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
+  },
+  utilityActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cloudBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    borderWidth: 1,
+  },
+  cloudDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
+  },
+  cloudText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
   brandTitle: {
     fontSize: 10,
