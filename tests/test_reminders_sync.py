@@ -141,6 +141,63 @@ def test_api_reminders_endpoints(tmp_path: Path, monkeypatch) -> None:
     assert len(data["synced"]) == 1
     assert data["synced"][0]["title"] == "Cloud Reminder"
 
-    # Delete
+    # Incremental GET includes tombstones after delete
     del_res = client.delete("/v1/reminders/c-1", headers=headers)
     assert del_res.status_code == 200
+
+    listed = client.get("/v1/reminders", headers=headers)
+    assert listed.status_code == 200
+    assert listed.json() == []
+
+    since_res = client.get(
+        "/v1/reminders",
+        params={"since": "2020-01-01T00:00:00.000Z"},
+        headers=headers,
+    )
+    assert since_res.status_code == 200
+    since_payload = since_res.json()
+    assert len(since_payload) == 1
+    assert since_payload[0]["id"] == "c-1"
+    assert since_payload[0]["isDeleted"] is True
+
+
+def test_batch_sync_last_write_wins_and_since_filter(tmp_path: Path, monkeypatch) -> None:
+    db = tmp_path / "lww.db"
+    monkeypatch.setattr(settings, "db_path", db)
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+
+    older = ReminderIn(
+        id="same",
+        title="Older title",
+        dueDate="2026-09-12T12:00:00.000Z",
+        status="pending",
+        createdAt="2026-09-12T10:00:00.000Z",
+        updatedAt="2026-09-12T10:00:00.000Z",
+    )
+    newer = ReminderIn(
+        id="same",
+        title="Newer title",
+        dueDate="2026-09-12T13:00:00.000Z",
+        status="snoozed",
+        snoozeCount=1,
+        createdAt="2026-09-12T10:00:00.000Z",
+        updatedAt="2026-09-12T11:00:00.000Z",
+    )
+    batch_sync_reminders([newer], db_path=db)
+    batch_out = batch_sync_reminders([older], client_sync_time="2026-09-12T10:00:00.000Z", db_path=db)
+    assert len(batch_out.synced) == 1
+    assert batch_out.synced[0].title == "Newer title"
+    assert batch_out.synced[0].status == "snoozed"
+
+    tombstone = ReminderIn(
+        id="same",
+        title="Newer title",
+        dueDate="2026-09-12T13:00:00.000Z",
+        status="snoozed",
+        createdAt="2026-09-12T10:00:00.000Z",
+        updatedAt="2026-09-12T12:00:00.000Z",
+        isDeleted=True,
+    )
+    deleted = batch_sync_reminders([tombstone], client_sync_time="2026-09-12T11:00:00.000Z", db_path=db)
+    assert deleted.synced[0].isDeleted is True
+    assert list_reminders(db_path=db, include_deleted=False) == []

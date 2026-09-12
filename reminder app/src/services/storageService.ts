@@ -43,6 +43,8 @@ export interface IReminderRepository {
   subscribe(listener: () => void): () => void;
   applyRemoteSync(synced: Array<Reminder & { isDeleted?: boolean }>): Promise<boolean>;
   onMutation(listener: () => void): () => void;
+  getAllForSync(): Array<Reminder & { isDeleted?: boolean }>;
+  pruneSyncedTombstones(): Promise<void>;
 }
 
 /**
@@ -154,6 +156,7 @@ export class StorageService implements IReminderRepository {
                 updatedAt: isoUpdatedAt,
                 completedAt: isoCompletedAt,
                 notificationId: item.notificationId !== undefined && item.notificationId !== null ? String(item.notificationId) : null,
+                ...(item.isDeleted ? { isDeleted: true } : {}),
               };
 
               // Non-destructive: Only insert disk record if key is not already populated in memory
@@ -188,20 +191,34 @@ export class StorageService implements IReminderRepository {
   }
 
   /**
-   * Synchronous 0ms read: Returns all reminders sorted by dueDate ascending
+   * Synchronous 0ms read: Returns all live (non-deleted) reminders sorted by dueDate ascending
    */
   getAll(): Reminder[] {
     return Array.from(this.cache.values())
-      .map((r) => ({ ...r }))
+      .filter((r) => !r.isDeleted)
+      .map((r) => this.toPublicReminder(r))
       .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
   }
 
   /**
-   * Synchronous 0ms read: Retrieves a single reminder by ID
+   * Full cache snapshot for cloud sync, including soft-delete tombstones.
+   */
+  getAllForSync(): Array<Reminder & { isDeleted?: boolean }> {
+    return Array.from(this.cache.values()).map((r) => ({
+      ...r,
+      isDeleted: Boolean(r.isDeleted),
+    }));
+  }
+
+  /**
+   * Synchronous 0ms read: Retrieves a single live reminder by ID
    */
   getById(id: string): Reminder | undefined {
     const item = this.cache.get(id);
-    return item ? { ...item } : undefined;
+    if (!item || item.isDeleted) {
+      return undefined;
+    }
+    return this.toPublicReminder(item);
   }
 
   /**
@@ -297,7 +314,7 @@ export class StorageService implements IReminderRepository {
     }
 
     const existing = this.cache.get(id);
-    if (!existing) {
+    if (!existing || existing.isDeleted) {
       throw new Error(`Reminder with id "${id}" not found`);
     }
 
@@ -366,7 +383,7 @@ export class StorageService implements IReminderRepository {
     }
 
     const existing = this.cache.get(id);
-    if (!existing) {
+    if (!existing || existing.isDeleted) {
       throw new Error(`Reminder with id "${id}" not found`);
     }
 
@@ -403,7 +420,7 @@ export class StorageService implements IReminderRepository {
     }
 
     const existing = this.cache.get(id);
-    if (!existing) {
+    if (!existing || existing.isDeleted) {
       throw new Error(`Reminder with id "${id}" not found`);
     }
 
@@ -445,14 +462,13 @@ export class StorageService implements IReminderRepository {
     }
 
     const existing = this.cache.get(id);
-    if (!existing) {
+    if (!existing || existing.isDeleted) {
       throw new Error(`Reminder with id "${id}" not found`);
     }
 
     const updated: Reminder = {
       ...existing,
       notificationId,
-      updatedAt: new Date().toISOString(),
     };
 
     this.cache.set(id, updated);
@@ -464,18 +480,28 @@ export class StorageService implements IReminderRepository {
   }
 
   /**
-   * Deletes a reminder from cache and storage
+   * Soft-deletes a reminder so the tombstone can sync to other devices.
    */
   async delete(id: string): Promise<boolean> {
     if (!this.initialized) {
       await this.init();
     }
 
-    if (!this.cache.has(id)) {
+    const existing = this.cache.get(id);
+    if (!existing) {
       return false;
     }
+    if (existing.isDeleted) {
+      return true;
+    }
 
-    this.cache.delete(id);
+    const now = new Date().toISOString();
+    this.cache.set(id, {
+      ...existing,
+      isDeleted: true,
+      notificationId: null,
+      updatedAt: now,
+    });
     this.notifyListeners();
     this.notifyMutation();
 
@@ -550,7 +576,8 @@ export class StorageService implements IReminderRepository {
   }
 
   /**
-   * Applies changes received from cloud sync using Last-Write-Wins (LWW) conflict resolution
+   * Applies changes received from cloud sync using Last-Write-Wins (LWW) conflict resolution.
+   * Does not fire mutation listeners, so applying a server batch cannot loop back into upload.
    */
   async applyRemoteSync(syncedReminders: Array<Reminder & { isDeleted?: boolean }>): Promise<boolean> {
     if (!this.initialized) {
@@ -560,47 +587,45 @@ export class StorageService implements IReminderRepository {
     let changed = false;
 
     for (const item of syncedReminders) {
+      if (!item || typeof item !== 'object' || !item.id) {
+        continue;
+      }
+      const existing = this.cache.get(item.id);
+      const serverTime = new Date(item.updatedAt).getTime();
+      const localTime = existing ? new Date(existing.updatedAt).getTime() : Number.NEGATIVE_INFINITY;
+      if (existing && (Number.isNaN(serverTime) || serverTime < localTime)) {
+        continue;
+      }
+
       if (item.isDeleted) {
-        if (this.cache.has(item.id)) {
+        if (existing) {
           this.cache.delete(item.id);
           changed = true;
         }
-      } else {
-        const existing = this.cache.get(item.id);
-        if (!existing) {
-          this.cache.set(item.id, {
-            id: item.id,
-            title: item.title,
-            notes: item.notes,
-            dueDate: item.dueDate,
-            status: item.status,
-            snoozeCount: item.snoozeCount,
-            lastSnoozedAt: item.lastSnoozedAt,
-            createdAt: item.createdAt,
-            updatedAt: item.updatedAt,
-            completedAt: item.completedAt,
-            notificationId: null,
-          });
-          changed = true;
-        } else {
-          const serverTime = new Date(item.updatedAt).getTime();
-          const localTime = new Date(existing.updatedAt).getTime();
-          if (serverTime >= localTime) {
-            this.cache.set(item.id, {
-              ...existing,
-              title: item.title,
-              notes: item.notes,
-              dueDate: item.dueDate,
-              status: item.status,
-              snoozeCount: item.snoozeCount,
-              lastSnoozedAt: item.lastSnoozedAt,
-              updatedAt: item.updatedAt,
-              completedAt: item.completedAt,
-            });
-            changed = true;
-          }
-        }
+        continue;
       }
+
+      const isoDueDate = parseSafeISO(item.dueDate);
+      if (!isoDueDate) {
+        continue;
+      }
+
+      this.cache.set(item.id, {
+        id: String(item.id),
+        title: String(item.title || '').trim() || existing?.title || 'Untitled',
+        notes: item.notes !== undefined && item.notes !== null ? String(item.notes) : (existing?.notes ?? null),
+        dueDate: isoDueDate,
+        status: (item.status as ReminderStatus) || existing?.status || 'pending',
+        snoozeCount: typeof item.snoozeCount === 'number' && item.snoozeCount >= 0
+          ? Math.floor(item.snoozeCount)
+          : (existing?.snoozeCount ?? 0),
+        lastSnoozedAt: item.lastSnoozedAt ? parseSafeISO(item.lastSnoozedAt) : null,
+        createdAt: parseSafeISO(item.createdAt) || existing?.createdAt || new Date().toISOString(),
+        updatedAt: parseSafeISO(item.updatedAt) || new Date().toISOString(),
+        completedAt: item.completedAt ? parseSafeISO(item.completedAt) : null,
+        notificationId: existing?.notificationId ?? null,
+      });
+      changed = true;
     }
 
     if (changed) {
@@ -609,6 +634,33 @@ export class StorageService implements IReminderRepository {
     }
 
     return changed;
+  }
+
+  /**
+   * Drops local tombstones after the server has accepted them.
+   */
+  async pruneSyncedTombstones(): Promise<void> {
+    if (!this.initialized) {
+      await this.init();
+    }
+
+    let changed = false;
+    for (const [id, reminder] of this.cache.entries()) {
+      if (reminder.isDeleted) {
+        this.cache.delete(id);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      await this.persist();
+    }
+  }
+
+  private toPublicReminder(reminder: Reminder): Reminder {
+    const copy: Reminder = { ...reminder };
+    delete copy.isDeleted;
+    return copy;
   }
 
   /**

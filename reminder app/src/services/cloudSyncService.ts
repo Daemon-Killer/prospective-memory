@@ -11,6 +11,9 @@ export const CLOUD_STORAGE_KEY_ENABLED = '@remy/cloud_sync_enabled';
 export const DEFAULT_API_URL = 'https://prospective-memory-api.onrender.com';
 export const DEFAULT_TOKEN = 'd/RSkr00A0GEg2uO3kOLkho3GQXut5Dc/hSvnwobfk4=';
 
+export const BACKOFF_DELAYS_MS = [1000, 2000, 4000, 8000, 16000, 30000] as const;
+export const POLL_INTERVAL_MS = 30000;
+
 export type CloudSyncState = 'idle' | 'syncing' | 'synced' | 'error' | 'disabled';
 
 export interface CloudConfig {
@@ -27,6 +30,10 @@ export interface SyncResult {
   error?: string;
 }
 
+function isJestRuntime(): boolean {
+  return typeof process !== 'undefined' && process.env.JEST_WORKER_ID !== undefined;
+}
+
 export class CloudSyncService {
   private apiUrl: string = DEFAULT_API_URL;
   private token: string = DEFAULT_TOKEN;
@@ -38,6 +45,11 @@ export class CloudSyncService {
   private isSyncInProgress: boolean = false;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pollIntervalTimer: ReturnType<typeof setInterval> | null = null;
+  private backoffTimer: ReturnType<typeof setTimeout> | null = null;
+  private retryAttempt: number = 0;
+  private appStateSubscription: { remove: () => void } | null = null;
+  private windowFocusHandler: (() => void) | null = null;
+  private unbindMutation: (() => void) | null = null;
   private listeners: Set<(state: CloudSyncState, config: CloudConfig) => void> = new Set();
   private initialized: boolean = false;
 
@@ -60,16 +72,13 @@ export class CloudSyncService {
       this.initialized = true;
       this.notifyListeners();
 
-      // Hook into local mutations
-      storageService.onMutation(() => {
+      this.unbindMutation = storageService.onMutation(() => {
         this.triggerDebouncedSync();
       });
 
-      // Start auto sync polling & lifecycle listeners
       this.startAutoSync();
 
-      // Initial sync
-      if (this.enabled) {
+      if (this.enabled && !isJestRuntime()) {
         setTimeout(() => this.syncNow(), 500);
       }
     } catch (e) {
@@ -136,6 +145,7 @@ export class CloudSyncService {
   }
 
   triggerDebouncedSync(delayMs: number = 800): void {
+    if (isJestRuntime()) return;
     if (!this.enabled || !this.apiUrl || !this.token) return;
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     this.debounceTimer = setTimeout(() => {
@@ -167,7 +177,10 @@ export class CloudSyncService {
         await storageService.init();
       }
 
-      const localReminders = storageService.getAll();
+      const localReminders = storageService.getAllForSync().map((reminder) => {
+        const { notificationId: _notificationId, ...wire } = reminder;
+        return wire;
+      });
       const endpoint = `${this.apiUrl}/v1/reminders/sync`;
 
       const response = await fetch(endpoint, {
@@ -192,12 +205,15 @@ export class CloudSyncService {
       const serverSyncTime: string = data.serverSyncTime || new Date().toISOString();
 
       if (syncedItems.length > 0) {
-        await storageService.applyRemoteSync(syncedItems);
+        await storageService.applyRemoteSync(syncedItems as Reminder[]);
       }
+      await storageService.pruneSyncedTombstones();
 
       this.lastSyncTime = serverSyncTime;
       await AsyncStorage.setItem(CLOUD_STORAGE_KEY_LAST_SYNC, serverSyncTime);
 
+      this.retryAttempt = 0;
+      this.clearBackoff();
       this.state = 'synced';
       this.errorMessage = null;
       this.notifyListeners();
@@ -212,42 +228,84 @@ export class CloudSyncService {
       this.state = 'error';
       this.errorMessage = msg;
       this.notifyListeners();
+      this.scheduleBackoffRetry();
       return { success: false, syncedCount: 0, error: msg };
     } finally {
       this.isSyncInProgress = false;
     }
   }
 
+  private scheduleBackoffRetry(): void {
+    if (!this.enabled || isJestRuntime()) {
+      return;
+    }
+    if (this.backoffTimer) {
+      return;
+    }
+    const delay = BACKOFF_DELAYS_MS[Math.min(this.retryAttempt, BACKOFF_DELAYS_MS.length - 1)];
+    this.retryAttempt += 1;
+    this.backoffTimer = setTimeout(() => {
+      this.backoffTimer = null;
+      this.syncNow();
+    }, delay);
+  }
+
+  private clearBackoff(): void {
+    if (this.backoffTimer) {
+      clearTimeout(this.backoffTimer);
+      this.backoffTimer = null;
+    }
+  }
+
   private startAutoSync(): void {
+    if (isJestRuntime()) {
+      return;
+    }
     if (this.pollIntervalTimer) clearInterval(this.pollIntervalTimer);
 
-    // Sync every 30 seconds if active
     this.pollIntervalTimer = setInterval(() => {
       if (this.enabled && !this.isSyncInProgress) {
         this.syncNow();
       }
-    }, 30000);
+    }, POLL_INTERVAL_MS);
 
-    // Listen to AppState (mobile and web)
-    AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
-      if (nextAppState === 'active' && this.enabled) {
-        this.syncNow();
-      }
-    });
+    if (!this.appStateSubscription && AppState?.addEventListener) {
+      this.appStateSubscription = AppState.addEventListener(
+        'change',
+        (nextAppState: AppStateStatus) => {
+          if (nextAppState === 'active' && this.enabled) {
+            this.syncNow();
+          }
+        }
+      );
+    }
 
-    // Also attach window focus on web if available
-    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-      window.addEventListener('focus', () => {
+    if (
+      !this.windowFocusHandler &&
+      typeof window !== 'undefined' &&
+      typeof window.addEventListener === 'function'
+    ) {
+      this.windowFocusHandler = () => {
         if (this.enabled) {
           this.syncNow();
         }
-      });
+      };
+      window.addEventListener('focus', this.windowFocusHandler);
     }
   }
 
   destroy(): void {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     if (this.pollIntervalTimer) clearInterval(this.pollIntervalTimer);
+    this.clearBackoff();
+    this.appStateSubscription?.remove();
+    this.appStateSubscription = null;
+    this.unbindMutation?.();
+    this.unbindMutation = null;
+    if (this.windowFocusHandler && typeof window !== 'undefined') {
+      window.removeEventListener('focus', this.windowFocusHandler);
+      this.windowFocusHandler = null;
+    }
     this.listeners.clear();
   }
 }

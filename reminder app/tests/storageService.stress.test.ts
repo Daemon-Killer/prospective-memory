@@ -137,7 +137,8 @@ describe('StorageService Empirical Stress & Adversarial Challenge Suite', () => 
       expect(rawStored).not.toBeNull();
       const envelope: StorageEnvelope = JSON.parse(rawStored!);
 
-      expect(envelope.reminders.length).toBe(inMemoryReminders.length);
+      const liveOnDisk = envelope.reminders.filter((r) => !r.isDeleted);
+      expect(liveOnDisk.length).toBe(inMemoryReminders.length);
 
       const diskMap = new Map(envelope.reminders.map((r) => [r.id, r]));
       for (const item of inMemoryReminders) {
@@ -146,11 +147,11 @@ describe('StorageService Empirical Stress & Adversarial Challenge Suite', () => 
         expect(diskItem).toEqual(item);
       }
 
-      // Verify the 10 deleted seed tasks are neither in cache nor on disk
+      // Deleted seed tasks stay as tombstones on disk but vanish from live reads
       for (let i = 30; i < 40; i++) {
         const deletedId = initialReminders[i].id;
         expect(service.getById(deletedId)).toBeUndefined();
-        expect(diskMap.has(deletedId)).toBe(false);
+        expect(diskMap.get(deletedId)?.isDeleted).toBe(true);
       }
     });
 
@@ -220,7 +221,8 @@ describe('StorageService Empirical Stress & Adversarial Challenge Suite', () => 
       const diskEnvelope: StorageEnvelope = JSON.parse(rawDisk!);
 
       expect(cached.length).toBe(17);
-      expect(diskEnvelope.reminders.length).toBe(17);
+      expect(diskEnvelope.reminders.filter((r) => !r.isDeleted).length).toBe(17);
+      expect(diskEnvelope.reminders.filter((r) => r.isDeleted).length).toBe(3);
 
       // Check each cached item exists on disk with exact equality
       const diskMap = new Map(diskEnvelope.reminders.map((r) => [r.id, r]));

@@ -112,9 +112,15 @@ def create_app() -> FastAPI:
     def get_reminders(
         status: str | None = None,
         since: str | None = None,
-        include_deleted: bool = False,
+        include_deleted: bool | None = Query(default=None),
     ) -> list[ReminderOut]:
-        return list_reminders(status=status, since=since, include_deleted=include_deleted)
+        # Incremental fetches must include tombstones so other devices can apply deletes.
+        include_deleted_flag = bool(since) if include_deleted is None else include_deleted
+        return list_reminders(
+            status=status,
+            since=since,
+            include_deleted=include_deleted_flag,
+        )
 
     @app.post("/v1/reminders", response_model=ReminderOut, dependencies=[Depends(_check_token)])
     def post_reminder(body: ReminderIn) -> ReminderOut:

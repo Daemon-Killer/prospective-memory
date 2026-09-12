@@ -132,6 +132,29 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               </Text>
             )}
 
+            <TouchableOpacity
+              testID="cloud-sync-enabled-toggle"
+              style={styles.enableRow}
+              onPress={() => setEnabledInput((prev) => !prev)}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: enabledInput }}
+            >
+              <View
+                style={[
+                  styles.checkbox,
+                  {
+                    borderColor: colors.borderStrong,
+                    backgroundColor: enabledInput ? colors.accent : 'transparent',
+                  },
+                ]}
+              >
+                {enabledInput ? <Text style={styles.checkboxMark}>✓</Text> : null}
+              </View>
+              <Text style={[styles.enableLabel, { color: colors.textPrimary }]}>
+                Enable cloud sync
+              </Text>
+            </TouchableOpacity>
+
             {/* Sync Now Button */}
             <TouchableOpacity
               style={[
@@ -283,6 +306,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 10,
+  },
+  enableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1,
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxMark: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 14,
+  },
+  enableLabel: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   actionBtn: {
     height: 44,

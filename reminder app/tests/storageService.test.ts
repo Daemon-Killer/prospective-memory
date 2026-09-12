@@ -656,10 +656,13 @@ describe('StorageService', () => {
       expect(service.getById(created.id)).toBeUndefined();
       expect(service.getAll().length).toBe(0);
 
-      // Verify deletion persisted to AsyncStorage
+      // Soft-delete tombstone is persisted so cloud sync can propagate the delete
       const rawStored = mockAsyncStorage.__getRaw(STORAGE_KEY);
       const parsedEnvelope = JSON.parse(rawStored!);
-      expect(parsedEnvelope.reminders.length).toBe(0);
+      expect(parsedEnvelope.reminders.length).toBe(1);
+      expect(parsedEnvelope.reminders[0].id).toBe(created.id);
+      expect(parsedEnvelope.reminders[0].isDeleted).toBe(true);
+      expect(service.getAllForSync()[0].isDeleted).toBe(true);
     });
 
     it('returns false when attempting to delete non-existent ID', async () => {
@@ -832,6 +835,84 @@ describe('StorageService', () => {
       const active = await uninit.reconcileActiveReminders();
       expect(active.length).toBe(1);
       expect(active[0].id).toBe('seed-task-1');
+    });
+  });
+
+  describe('Cloud sync helpers (tombstones + LWW)', () => {
+    it('applyRemoteSync inserts, updates by LWW, and honors newer local writes', async () => {
+      const local = await service.create({
+        title: 'Local',
+        dueDate: '2026-09-12T10:00:00.000Z',
+      });
+
+      const changed = await service.applyRemoteSync([
+        {
+          ...local,
+          title: 'From server',
+          updatedAt: new Date(Date.parse(local.updatedAt) + 5000).toISOString(),
+        },
+      ]);
+      expect(changed).toBe(true);
+      expect(service.getById(local.id)?.title).toBe('From server');
+
+      const afterLocalEdit = await service.update(local.id, { title: 'Local again' });
+      const ignored = await service.applyRemoteSync([
+        {
+          ...afterLocalEdit,
+          title: 'Stale server',
+          updatedAt: new Date(Date.parse(afterLocalEdit.updatedAt) - 5000).toISOString(),
+        },
+      ]);
+      expect(ignored).toBe(false);
+      expect(service.getById(local.id)?.title).toBe('Local again');
+    });
+
+    it('applyRemoteSync applies remote tombstones and pruneSyncedTombstones drops local deletes after upload', async () => {
+      const created = await service.create({
+        title: 'To delete remotely',
+        dueDate: '2026-09-12T10:00:00.000Z',
+      });
+
+      await service.applyRemoteSync([
+        {
+          ...created,
+          isDeleted: true,
+          updatedAt: new Date(Date.parse(created.updatedAt) + 1000).toISOString(),
+        },
+      ]);
+      expect(service.getById(created.id)).toBeUndefined();
+      expect(service.getAllForSync().find((r) => r.id === created.id)).toBeUndefined();
+
+      const local = await service.create({
+        title: 'Local delete',
+        dueDate: '2026-09-12T11:00:00.000Z',
+      });
+      await service.delete(local.id);
+      expect(service.getAllForSync().find((r) => r.id === local.id)?.isDeleted).toBe(true);
+
+      await service.pruneSyncedTombstones();
+      expect(service.getAllForSync().find((r) => r.id === local.id)).toBeUndefined();
+    });
+
+    it('applyRemoteSync does not notify mutation listeners', async () => {
+      const mutation = jest.fn();
+      service.onMutation(mutation);
+      await service.applyRemoteSync([
+        {
+          id: 'remote-1',
+          title: 'Remote insert',
+          notes: null,
+          dueDate: '2026-09-12T10:00:00.000Z',
+          status: 'pending',
+          snoozeCount: 0,
+          lastSnoozedAt: null,
+          createdAt: '2026-09-12T09:00:00.000Z',
+          updatedAt: '2026-09-12T09:00:00.000Z',
+          completedAt: null,
+        },
+      ]);
+      expect(mutation).not.toHaveBeenCalled();
+      expect(service.getById('remote-1')?.title).toBe('Remote insert');
     });
   });
 

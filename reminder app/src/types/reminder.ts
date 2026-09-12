@@ -60,6 +60,9 @@ export interface Reminder {
 
   /** OS-level notification trigger identifier from expo-notifications */
   notificationId?: string | null;
+
+  /** Soft-delete tombstone used for cross-device sync. Live records omit this. */
+  isDeleted?: boolean;
 }
 
 export interface CreateReminderInput {

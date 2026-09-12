@@ -51,7 +51,13 @@ class Settings(BaseSettings):
         return (self.api_url or os.environ.get("PMEM_API_URL") or "").strip().rstrip("/")
 
     def is_hosted(self) -> bool:
-        return bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID"))
+        return bool(
+            os.environ.get("RAILWAY_ENVIRONMENT")
+            or os.environ.get("RAILWAY_PROJECT_ID")
+            or os.environ.get("RENDER")
+            or os.environ.get("RENDER_SERVICE_ID")
+            or os.environ.get("RENDER_INSTANCE_ID")
+        )
 
     def resolved_token(self) -> str:
         if self.token.strip():

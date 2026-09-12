@@ -5,3 +5,4 @@ export * from './ReminderCard';
 export * from './ReminderList';
 export * from './SnoozeModal';
 export * from './EmptyState';
+export * from './CloudSyncModal';
