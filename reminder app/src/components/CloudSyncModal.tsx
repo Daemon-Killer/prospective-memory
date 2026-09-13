@@ -109,6 +109,16 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     }
   };
 
+  const handleForceFullSync = async () => {
+    setLastMessage('Performing full cloud resync...');
+    const res = await cloudSyncService.forceFullSync();
+    if (res.success) {
+      setLastMessage(`Resynced ${res.syncedCount} items from cloud.`);
+    } else {
+      setLastMessage(`Resync error: ${res.error || 'Check credentials'}`);
+    }
+  };
+
   const handleSave = async () => {
     await cloudSyncService.updateConfig({
       apiUrl: urlInput,
@@ -212,6 +222,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
             {/* Sync Now Button */}
             <TouchableOpacity
+              testID="sync-now-btn"
               style={[
                 styles.actionBtn,
                 { backgroundColor: colors.accent },
@@ -225,6 +236,27 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               ) : (
                 <Text style={styles.actionBtnText}>⚡ Sync Now</Text>
               )}
+            </TouchableOpacity>
+
+            {/* Force Full Resync Button */}
+            <TouchableOpacity
+              testID="force-resync-btn"
+              style={[
+                styles.actionBtn,
+                {
+                  backgroundColor: 'transparent',
+                  borderWidth: 1,
+                  borderColor: colors.borderStrong,
+                  marginTop: 8,
+                },
+                syncState === 'syncing' && { opacity: 0.7 },
+              ]}
+              onPress={handleForceFullSync}
+              disabled={syncState === 'syncing'}
+            >
+              <Text style={[styles.actionBtnText, { color: colors.textPrimary }]}>
+                🔄 Force Full Resync
+              </Text>
             </TouchableOpacity>
 
             <View style={styles.divider} />

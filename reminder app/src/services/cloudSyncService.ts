@@ -105,13 +105,26 @@ export class CloudSyncService {
   }
 
   async updateConfig(newConfig: Partial<CloudConfig>): Promise<void> {
+    let credentialsChanged = false;
     if (newConfig.apiUrl !== undefined) {
-      this.apiUrl = newConfig.apiUrl.trim().replace(/\/+$/, '');
-      await AsyncStorage.setItem(CLOUD_STORAGE_KEY_URL, this.apiUrl);
+      const trimmed = newConfig.apiUrl.trim().replace(/\/+$/, '');
+      if (trimmed !== this.apiUrl) {
+        credentialsChanged = true;
+        this.apiUrl = trimmed;
+        await AsyncStorage.setItem(CLOUD_STORAGE_KEY_URL, this.apiUrl);
+      }
     }
     if (newConfig.token !== undefined) {
-      this.token = newConfig.token.trim();
-      await AsyncStorage.setItem(CLOUD_STORAGE_KEY_TOKEN, this.token);
+      const trimmed = newConfig.token.trim();
+      if (trimmed !== this.token) {
+        credentialsChanged = true;
+        this.token = trimmed;
+        await AsyncStorage.setItem(CLOUD_STORAGE_KEY_TOKEN, this.token);
+      }
+    }
+    if (credentialsChanged) {
+      this.lastSyncTime = null;
+      await AsyncStorage.removeItem(CLOUD_STORAGE_KEY_LAST_SYNC);
     }
     if (newConfig.enabled !== undefined) {
       this.enabled = newConfig.enabled;
@@ -120,7 +133,7 @@ export class CloudSyncService {
     this.notifyListeners();
 
     if (this.enabled) {
-      this.syncNow();
+      this.syncNow({ forceFull: credentialsChanged });
     }
   }
 
@@ -144,16 +157,27 @@ export class CloudSyncService {
     }
   }
 
-  triggerDebouncedSync(delayMs: number = 800): void {
-    if (isJestRuntime()) return;
-    if (!this.enabled || !this.apiUrl || !this.token) return;
+  private triggerDebouncedSync(delayMs: number = 300): void {
+    if (!this.enabled || isJestRuntime()) {
+      return;
+    }
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     this.debounceTimer = setTimeout(() => {
       this.syncNow();
     }, delayMs);
   }
 
-  async syncNow(): Promise<SyncResult> {
+  /**
+   * Resets the local incremental sync cursor and triggers a full sync with the remote cloud.
+   * Merges all remote reminders into local storage via Last-Write-Wins without data loss.
+   */
+  async forceFullSync(): Promise<SyncResult> {
+    this.lastSyncTime = null;
+    await AsyncStorage.removeItem(CLOUD_STORAGE_KEY_LAST_SYNC);
+    return this.syncNow({ forceFull: true });
+  }
+
+  async syncNow(options?: { forceFull?: boolean }): Promise<SyncResult> {
     if (!this.enabled) {
       return { success: false, syncedCount: 0, error: 'Sync disabled' };
     }
@@ -183,6 +207,11 @@ export class CloudSyncService {
       });
       const endpoint = `${this.apiUrl}/v1/reminders/sync`;
 
+      // If forceFull is requested OR if local cache is completely empty,
+      // request all active records from server (clientSyncTime: null).
+      const shouldDoFullSync = options?.forceFull || storageService.getAll().length === 0;
+      const clientSyncTime = shouldDoFullSync ? null : this.lastSyncTime;
+
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -191,7 +220,7 @@ export class CloudSyncService {
         },
         body: JSON.stringify({
           reminders: localReminders,
-          clientSyncTime: this.lastSyncTime,
+          clientSyncTime,
         }),
       });
 

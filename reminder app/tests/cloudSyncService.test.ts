@@ -119,4 +119,64 @@ describe('CloudSyncService', () => {
     expect(service.getState()).toBe('disabled');
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('forceFullSync resets lastSyncTime and sends clientSyncTime as null', async () => {
+    mockSyncResponse([], '2026-09-12T12:00:00.000Z');
+    await service.init();
+
+    await service.syncNow();
+    expect(service.getConfig().lastSyncTime).toBe('2026-09-12T12:00:00.000Z');
+
+    await storageService.create({
+      title: 'Existing item',
+      dueDate: '2026-09-12T18:00:00.000Z',
+    });
+
+    mockSyncResponse(
+      [
+        {
+          id: 'full-sync-item',
+          title: 'Full sync recovered item',
+          dueDate: '2026-09-12T19:00:00.000Z',
+          status: 'pending',
+          snoozeCount: 0,
+          createdAt: '2026-09-12T10:00:00.000Z',
+          updatedAt: '2026-09-12T10:00:00.000Z',
+        },
+      ],
+      '2026-09-12T13:00:00.000Z'
+    );
+
+    const fullResult = await service.forceFullSync();
+    expect(fullResult.success).toBe(true);
+    expect(fullResult.syncedCount).toBe(1);
+
+    const [, options] = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+    const body = JSON.parse(options.body);
+    expect(body.clientSyncTime).toBeNull();
+    expect(storageService.getById('full-sync-item')?.title).toBe('Full sync recovered item');
+  });
+
+  it('automatically performs full sync when local storage cache is empty', async () => {
+    mockSyncResponse([
+      {
+        id: 'srv-empty-fallback',
+        title: 'Hydrated item',
+        dueDate: '2026-09-12T19:00:00.000Z',
+        status: 'pending',
+        snoozeCount: 0,
+        createdAt: '2026-09-12T10:00:00.000Z',
+        updatedAt: '2026-09-12T10:00:00.000Z',
+      },
+    ]);
+
+    await service.init();
+    expect(storageService.getAll()).toHaveLength(0);
+
+    await service.syncNow();
+    const [, options] = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+    const body = JSON.parse(options.body);
+    expect(body.clientSyncTime).toBeNull();
+    expect(storageService.getById('srv-empty-fallback')?.title).toBe('Hydrated item');
+  });
 });

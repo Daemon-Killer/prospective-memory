@@ -7,6 +7,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { useReminders } from '../hooks/useReminders';
 import { useNotifications } from '../hooks/useNotifications';
 import { remyCaptureService } from '../services/remyCaptureService';
+import { cloudSyncService } from '../services/cloudSyncService';
 import { Masthead } from '../components/Masthead';
 import { ReminderList } from '../components/ReminderList';
 import { QuickCaptureBar } from '../components/QuickCaptureBar';
@@ -175,6 +176,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     await remindersHook.snoozeReminder(reminderId, targetDate, preset);
   };
 
+  const [internalRefreshing, setInternalRefreshing] = useState(false);
+  const isRefreshing = propIsRefreshing ?? internalRefreshing;
+
+  const handleRefresh = useCallback(async () => {
+    if (propOnRefresh) {
+      await propOnRefresh();
+    } else {
+      setInternalRefreshing(true);
+      try {
+        await cloudSyncService.syncNow();
+      } finally {
+        setInternalRefreshing(false);
+      }
+    }
+  }, [propOnRefresh]);
+
   return (
     <SafeAreaView testID={testID} style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={mode === 'light' ? 'dark' : 'light'} />
@@ -195,8 +212,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             onToggleComplete={handleToggleComplete}
             onSnoozePress={handleOpenSnooze}
             onDeletePress={handleDeleteReminder}
-            onRefresh={propOnRefresh}
-            isRefreshing={propIsRefreshing}
+            onRefresh={handleRefresh}
+            isRefreshing={isRefreshing}
           />
         </View>
 

@@ -794,16 +794,23 @@ def batch_sync_reminders(
     client_sync_time: str | None = None,
     db_path: Path | None = None,
 ) -> ReminderSyncBatchOut:
-    server_time = _now().isoformat()
+    server_time = _now().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     with open_db(db_path) as conn:
         for rem in client_reminders:
             _execute(conn, _REMINDER_UPSERT_SQL, _reminder_params(rem), db_path)
             _mirror_reminder_to_task(conn, rem, db_path)
         conn.commit()
 
-        if client_sync_time:
-            query = "SELECT * FROM reminders WHERE updated_at >= ? ORDER BY updated_at ASC"
-            rows = _execute(conn, query, (client_sync_time,), db_path).fetchall()
+        if client_sync_time and client_sync_time.strip():
+            st = client_sync_time.strip()
+            st_z = st.replace("+00:00", "Z")
+            st_offset = st[:-1] + "+00:00" if st.endswith("Z") else st
+            query = (
+                "SELECT * FROM reminders "
+                "WHERE updated_at >= ? OR updated_at >= ? "
+                "ORDER BY updated_at ASC"
+            )
+            rows = _execute(conn, query, (st_z, st_offset), db_path).fetchall()
         else:
             query = "SELECT * FROM reminders WHERE is_deleted = 0 ORDER BY due_date ASC"
             rows = _execute(conn, query, (), db_path).fetchall()
