@@ -33,5 +33,10 @@ npm-debug.*
 # Wear OS build outputs
 reminder app/wear/build/
 reminder app/wear/.gradle/
+
+# Expo Android native project (committed; ignore build outputs and debug signing)
+reminder app/android/app/debug.keystore
+reminder app/android/local.properties
+
 .gradle/
 build/

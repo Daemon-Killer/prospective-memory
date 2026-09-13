@@ -1,0 +1,23 @@
+# OSX
+#
+.DS_Store
+
+# Android/IntelliJ
+#
+build/
+.idea
+.gradle
+local.properties
+*.iml
+*.hprof
+.cxx/
+
+# generated inline modules
+app/src/main/java/inline/
+
+# Bundle artifacts
+*.jsbundle
+
+# Local debug signing — Gradle generates a machine-local debug.keystore
+*.keystore
+*.jks
