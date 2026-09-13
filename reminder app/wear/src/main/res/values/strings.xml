@@ -9,4 +9,6 @@
     <string name="action_complete">Complete</string>
     <string name="no_active_reminders">No reminders due</string>
     <string name="watch_face_name">Remy Swiss Void</string>
+    <string name="voice_capture_prompt">Speak reminder</string>
+    <string name="action_voice_capture">+ Quick Capture</string>
 </resources>

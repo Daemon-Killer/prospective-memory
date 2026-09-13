@@ -97,9 +97,10 @@ export interface OverdueAnalysis {
 export function getOverdueAnalysis(
   dueDate: string | Date,
   status: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  armed: boolean = true
 ): OverdueAnalysis {
-  if (status === 'completed') {
+  if (status === 'completed' || armed === false) {
     return { isOverdue: false, elapsedFormatted: '', elapsedMinutes: 0 };
   }
 

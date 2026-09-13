@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 from uuid import uuid4
@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS reminders (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     completed_at TEXT,
-    is_deleted INTEGER NOT NULL DEFAULT 0
+    is_deleted INTEGER NOT NULL DEFAULT 0,
+    armed INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status, due_date ASC);
 CREATE INDEX IF NOT EXISTS idx_reminders_updated ON reminders(updated_at DESC);
@@ -109,7 +110,8 @@ CREATE TABLE IF NOT EXISTS reminders (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     completed_at TEXT,
-    is_deleted INTEGER NOT NULL DEFAULT 0
+    is_deleted INTEGER NOT NULL DEFAULT 0,
+    armed INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status, due_date ASC);
 CREATE INDEX IF NOT EXISTS idx_reminders_updated ON reminders(updated_at DESC);
@@ -130,6 +132,38 @@ def _pg_connect():
 
 
 _PG_BOOTSTRAP = [s.strip() for s in PG_SCHEMA.split(";") if s.strip()]
+_REMINDER_UPSERT_SQL = """
+INSERT INTO reminders (
+    id, title, notes, due_date, status, snooze_count, last_snoozed_at,
+    created_at, updated_at, completed_at, is_deleted, armed
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (id) DO UPDATE SET
+    title = EXCLUDED.title,
+    notes = EXCLUDED.notes,
+    due_date = EXCLUDED.due_date,
+    status = EXCLUDED.status,
+    snooze_count = EXCLUDED.snooze_count,
+    last_snoozed_at = EXCLUDED.last_snoozed_at,
+    updated_at = EXCLUDED.updated_at,
+    completed_at = EXCLUDED.completed_at,
+    is_deleted = EXCLUDED.is_deleted,
+    armed = EXCLUDED.armed
+WHERE EXCLUDED.updated_at >= reminders.updated_at
+"""
+
+
+def _migrate_reminders_armed(conn: Any, db_path: Path | None) -> None:
+    if _use_pg() and db_path is None:
+        cur = conn.cursor()
+        cur.execute(
+            "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS armed INTEGER NOT NULL DEFAULT 1"
+        )
+        conn.commit()
+        return
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(reminders)").fetchall()}
+    if "armed" not in cols:
+        conn.execute("ALTER TABLE reminders ADD COLUMN armed INTEGER NOT NULL DEFAULT 1")
+        conn.commit()
 
 
 def connect(db_path: Path | None = None):
@@ -139,6 +173,7 @@ def connect(db_path: Path | None = None):
             for stmt in _PG_BOOTSTRAP:
                 cur.execute(stmt)
         conn.commit()
+        _migrate_reminders_armed(conn, db_path)
         return conn
     settings.ensure()
     path = (db_path or settings.db_path).expanduser().resolve()
@@ -148,6 +183,7 @@ def connect(db_path: Path | None = None):
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.executescript(SQLITE_SCHEMA)
     conn.commit()
+    _migrate_reminders_armed(conn, db_path)
     return conn
 
 
@@ -170,10 +206,14 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _get(r: Any, key: str) -> Any:
-    if isinstance(r, dict):
-        return r[key]
-    return r[key]
+def _get(r: Any, key: str, default: Any = None) -> Any:
+    if r is None:
+        return default
+    try:
+        val = r[key]
+        return val if val is not None else default
+    except Exception:
+        return default
 
 
 def _row(r: Any) -> Task:
@@ -204,19 +244,88 @@ def _execute(conn: Any, sql: str, params: tuple | list = (), db_path: Path | Non
     return conn.execute(q, params)
 
 
+_TASK_UPSERT_SQL = """
+INSERT INTO tasks (
+    id, text, raw, category, trigger_type, trigger_detail,
+    status, confidence, source, created_at, updated_at, completed_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (id) DO UPDATE SET
+    text = EXCLUDED.text,
+    raw = EXCLUDED.raw,
+    category = EXCLUDED.category,
+    status = EXCLUDED.status,
+    trigger_type = EXCLUDED.trigger_type,
+    trigger_detail = EXCLUDED.trigger_detail,
+    updated_at = EXCLUDED.updated_at,
+    completed_at = EXCLUDED.completed_at
+WHERE EXCLUDED.updated_at >= tasks.updated_at
+"""
+
+
+def _mirror_reminder_to_task(conn: Any, rem: ReminderIn, db_path: Path | None = None) -> None:
+    if rem.isDeleted:
+        status = TaskStatus.DROPPED.value
+        completed_at = rem.updatedAt
+    elif rem.status == "completed":
+        status = TaskStatus.DONE.value
+        completed_at = rem.completedAt or rem.updatedAt
+    else:
+        status = TaskStatus.OPEN.value
+        completed_at = None
+
+    trigger_type = TriggerType.TIME.value if rem.armed else TriggerType.NONE.value
+    trigger_detail = rem.dueDate if rem.armed else ""
+    category = "inbox"
+    if rem.notes and rem.notes.startswith("category:"):
+        category = rem.notes.split(":", 1)[1].strip() or "inbox"
+    else:
+        try:
+            category = str(infer(rem.title).get("category", "inbox"))
+        except Exception:
+            category = "inbox"
+
+    params = (
+        rem.id,
+        rem.title,
+        rem.title,
+        category,
+        trigger_type,
+        trigger_detail,
+        status,
+        0.8,
+        "remy",
+        rem.createdAt,
+        rem.updatedAt,
+        completed_at,
+    )
+    _execute(conn, _TASK_UPSERT_SQL, params, db_path)
+
+
 def capture(text: str, source: str = "api", db_path: Path | None = None) -> Task:
     raw = text.strip()
     if not raw:
         raise ValueError("empty capture")
     guessed = infer(raw)
     now = _now()
+    trigger_type = guessed["trigger_type"]
+    is_armed = 1 if trigger_type == TriggerType.TIME else 0
+    target_time: datetime | None = guessed.get("target_time")
+    if is_armed and target_time:
+        rem_due = target_time.isoformat()
+    elif is_armed:
+        rem_due = (now + timedelta(hours=1)).isoformat()
+    else:
+        rem_due = now.isoformat()
+
+    trigger_detail = str(guessed.get("trigger_detail") or (rem_due if is_armed else ""))
+
     task = Task(
         id=uuid4().hex[:16],
         text=raw,
         raw=raw,
         category=str(guessed["category"]),
-        trigger_type=guessed["trigger_type"],
-        trigger_detail=str(guessed["trigger_detail"]),
+        trigger_type=trigger_type,
+        trigger_detail=trigger_detail,
         status=TaskStatus.OPEN,
         confidence=float(guessed["confidence"]),
         source=source,
@@ -245,6 +354,27 @@ def capture(text: str, source: str = "api", db_path: Path | None = None) -> Task
                 task.created_at.isoformat(),
                 task.updated_at.isoformat(),
                 None,
+            ),
+            db_path,
+        )
+        # Mirror to reminders table for a unified ledger
+        rem_notes = f"category:{task.category}" if task.category != "inbox" else None
+        _execute(
+            conn,
+            _REMINDER_UPSERT_SQL,
+            (
+                task.id,
+                task.text,
+                rem_notes,
+                rem_due,
+                "pending",
+                0,
+                None,
+                task.created_at.isoformat(),
+                task.updated_at.isoformat(),
+                None,
+                0,
+                is_armed,
             ),
             db_path,
         )
@@ -298,6 +428,28 @@ def set_status(task_id: str, status: TaskStatus, db_path: Path | None = None) ->
             (status.value, now.isoformat(), completed, task_id),
             db_path,
         )
+        # Mirror status change to reminders
+        if status == TaskStatus.DONE:
+            _execute(
+                conn,
+                "UPDATE reminders SET status='completed', completed_at=?, updated_at=? WHERE id=?",
+                (completed, now.isoformat(), task_id),
+                db_path,
+            )
+        elif status == TaskStatus.DROPPED:
+            _execute(
+                conn,
+                "UPDATE reminders SET is_deleted=1, updated_at=? WHERE id=?",
+                (now.isoformat(), task_id),
+                db_path,
+            )
+        elif status == TaskStatus.OPEN:
+            _execute(
+                conn,
+                "UPDATE reminders SET status='pending', completed_at=NULL, is_deleted=0, updated_at=? WHERE id=?",
+                (now.isoformat(), task_id),
+                db_path,
+            )
         conn.commit()
         cur = _execute(conn, "SELECT * FROM tasks WHERE id=?", (task_id,), db_path)
         row = cur.fetchone()
@@ -323,10 +475,31 @@ def stats(db_path: Path | None = None) -> dict:
                 db_path=db_path,
             ).fetchall()
         }
+        rem_total = _get(
+            _execute(conn, "SELECT COUNT(*) AS c FROM reminders WHERE is_deleted = 0", db_path=db_path).fetchone(),
+            "c",
+        )
+        rem_by_status = {
+            _get(r, "status"): _get(r, "c")
+            for r in _execute(
+                conn,
+                "SELECT status, COUNT(*) AS c FROM reminders WHERE is_deleted = 0 GROUP BY status",
+                db_path=db_path,
+            ).fetchall()
+        }
+        rem_unarmed = _get(
+            _execute(conn, "SELECT COUNT(*) AS c FROM reminders WHERE is_deleted = 0 AND armed = 0", db_path=db_path).fetchone(),
+            "c",
+        )
     return {
-        "total": int(total),
+        "total": int(total or 0),
         "by_status": by_status,
         "open_by_category": by_cat,
+        "reminders": {
+            "total": int(rem_total or 0),
+            "by_status": rem_by_status,
+            "unarmed": int(rem_unarmed or 0),
+        },
         "jarvis": jarvis_stats(db_path),
     }
 
@@ -536,6 +709,35 @@ def jarvis_stats(db_path: Path | None = None) -> dict:
     return {"live_by_kind": {k: int(v) for k, v in live.items()}}
 
 
+def _as_armed(r: Any) -> bool:
+    try:
+        value = _get(r, "armed")
+    except Exception:
+        return True
+    if value is None:
+        return True
+    if isinstance(value, bool):
+        return value
+    return int(value) != 0
+
+
+def _reminder_params(rem: ReminderIn) -> tuple[Any, ...]:
+    return (
+        rem.id,
+        rem.title,
+        rem.notes,
+        rem.dueDate,
+        rem.status,
+        rem.snoozeCount,
+        rem.lastSnoozedAt,
+        rem.createdAt,
+        rem.updatedAt,
+        rem.completedAt,
+        1 if rem.isDeleted else 0,
+        1 if rem.armed else 0,
+    )
+
+
 def _reminder_row(r: Any) -> ReminderOut:
     return ReminderOut(
         id=_get(r, "id"),
@@ -549,6 +751,7 @@ def _reminder_row(r: Any) -> ReminderOut:
         updatedAt=_get(r, "updated_at"),
         completedAt=_get(r, "completed_at"),
         isDeleted=bool(_get(r, "is_deleted")),
+        armed=_as_armed(r),
     )
 
 
@@ -576,38 +779,9 @@ def list_reminders(
 
 
 def upsert_reminder(rem: ReminderIn, db_path: Path | None = None) -> ReminderOut:
-    sql = """
-    INSERT INTO reminders (
-        id, title, notes, due_date, status, snooze_count, last_snoozed_at,
-        created_at, updated_at, completed_at, is_deleted
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT (id) DO UPDATE SET
-        title = EXCLUDED.title,
-        notes = EXCLUDED.notes,
-        due_date = EXCLUDED.due_date,
-        status = EXCLUDED.status,
-        snooze_count = EXCLUDED.snooze_count,
-        last_snoozed_at = EXCLUDED.last_snoozed_at,
-        updated_at = EXCLUDED.updated_at,
-        completed_at = EXCLUDED.completed_at,
-        is_deleted = EXCLUDED.is_deleted
-    WHERE EXCLUDED.updated_at >= reminders.updated_at
-    """
-    params = (
-        rem.id,
-        rem.title,
-        rem.notes,
-        rem.dueDate,
-        rem.status,
-        rem.snoozeCount,
-        rem.lastSnoozedAt,
-        rem.createdAt,
-        rem.updatedAt,
-        rem.completedAt,
-        1 if rem.isDeleted else 0,
-    )
     with open_db(db_path) as conn:
-        _execute(conn, sql, params, db_path)
+        _execute(conn, _REMINDER_UPSERT_SQL, _reminder_params(rem), db_path)
+        _mirror_reminder_to_task(conn, rem, db_path)
         conn.commit()
         row = _execute(
             conn, "SELECT * FROM reminders WHERE id = ?", (rem.id,), db_path
@@ -622,38 +796,9 @@ def batch_sync_reminders(
 ) -> ReminderSyncBatchOut:
     server_time = _now().isoformat()
     with open_db(db_path) as conn:
-        sql = """
-        INSERT INTO reminders (
-            id, title, notes, due_date, status, snooze_count, last_snoozed_at,
-            created_at, updated_at, completed_at, is_deleted
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (id) DO UPDATE SET
-            title = EXCLUDED.title,
-            notes = EXCLUDED.notes,
-            due_date = EXCLUDED.due_date,
-            status = EXCLUDED.status,
-            snooze_count = EXCLUDED.snooze_count,
-            last_snoozed_at = EXCLUDED.last_snoozed_at,
-            updated_at = EXCLUDED.updated_at,
-            completed_at = EXCLUDED.completed_at,
-            is_deleted = EXCLUDED.is_deleted
-        WHERE EXCLUDED.updated_at >= reminders.updated_at
-        """
         for rem in client_reminders:
-            params = (
-                rem.id,
-                rem.title,
-                rem.notes,
-                rem.dueDate,
-                rem.status,
-                rem.snoozeCount,
-                rem.lastSnoozedAt,
-                rem.createdAt,
-                rem.updatedAt,
-                rem.completedAt,
-                1 if rem.isDeleted else 0,
-            )
-            _execute(conn, sql, params, db_path)
+            _execute(conn, _REMINDER_UPSERT_SQL, _reminder_params(rem), db_path)
+            _mirror_reminder_to_task(conn, rem, db_path)
         conn.commit()
 
         if client_sync_time:
@@ -672,6 +817,92 @@ def delete_reminder(reminder_id: str, db_path: Path | None = None) -> bool:
     sql = "UPDATE reminders SET is_deleted = 1, updated_at = ? WHERE id = ?"
     with open_db(db_path) as conn:
         cur = _execute(conn, sql, (now, reminder_id), db_path)
+        _execute(
+            conn,
+            "UPDATE tasks SET status = 'dropped', completed_at = ?, updated_at = ? WHERE id = ?",
+            (now, now, reminder_id),
+            db_path,
+        )
         conn.commit()
         return bool(cur.rowcount and cur.rowcount > 0)
+
+
+def snooze_reminder_db(
+    reminder_id: str,
+    target_date: str,
+    db_path: Path | None = None,
+) -> ReminderOut | None:
+    now = _now().isoformat()
+    with open_db(db_path) as conn:
+        cur = _execute(conn, "SELECT * FROM reminders WHERE id = ?", (reminder_id,), db_path)
+        row = cur.fetchone()
+        if not row:
+            return None
+        snooze_count = int(_get(row, "snooze_count") or 0) + 1
+        _execute(
+            conn,
+            """
+            UPDATE reminders SET
+                due_date = ?,
+                status = 'snoozed',
+                snooze_count = ?,
+                last_snoozed_at = ?,
+                updated_at = ?,
+                armed = 1
+            WHERE id = ?
+            """,
+            (target_date, snooze_count, now, now, reminder_id),
+            db_path,
+        )
+        _execute(
+            conn,
+            """
+            UPDATE tasks SET
+                status = 'open',
+                trigger_type = 'time',
+                trigger_detail = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (target_date, now, reminder_id),
+            db_path,
+        )
+        conn.commit()
+        updated_row = _execute(
+            conn, "SELECT * FROM reminders WHERE id = ?", (reminder_id,), db_path
+        ).fetchone()
+        return _reminder_row(updated_row) if updated_row else None
+
+
+def complete_reminder_db(reminder_id: str, db_path: Path | None = None) -> ReminderOut | None:
+    now = _now().isoformat()
+    with open_db(db_path) as conn:
+        cur = _execute(conn, "SELECT * FROM reminders WHERE id = ?", (reminder_id,), db_path)
+        row = cur.fetchone()
+        if not row:
+            return None
+        _execute(
+            conn,
+            """
+            UPDATE reminders SET
+                status = 'completed',
+                completed_at = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (now, now, reminder_id),
+            db_path,
+        )
+        _execute(
+            conn,
+            "UPDATE tasks SET status = 'done', completed_at = ?, updated_at = ? WHERE id = ?",
+            (now, now, reminder_id),
+            db_path,
+        )
+        conn.commit()
+        updated_row = _execute(
+            conn, "SELECT * FROM reminders WHERE id = ?", (reminder_id,), db_path
+        ).fetchone()
+        return _reminder_row(updated_row) if updated_row else None
+
 

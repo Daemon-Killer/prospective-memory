@@ -63,12 +63,24 @@ export interface Reminder {
 
   /** Soft-delete tombstone used for cross-device sync. Live records omit this. */
   isDeleted?: boolean;
+
+  /**
+   * False = inbox dump with no alarm. Missing/true = scheduled (legacy records).
+   * dueDate stays required for Wear/cloud; unarmed items must not notify or show overdue.
+   */
+  armed?: boolean;
+}
+
+/** Legacy reminders omit `armed`; treat them as scheduled. */
+export function isReminderArmed(reminder: { armed?: boolean }): boolean {
+  return reminder.armed !== false;
 }
 
 export interface CreateReminderInput {
   title: string;
   notes?: string | null;
   dueDate: string;
+  armed?: boolean;
 }
 
 export interface UpdateReminderInput {
@@ -76,6 +88,7 @@ export interface UpdateReminderInput {
   notes?: string | null;
   dueDate?: string;
   status?: ReminderStatus;
+  armed?: boolean;
 }
 
 export interface SnoozeReminderOptions {

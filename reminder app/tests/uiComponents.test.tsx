@@ -90,6 +90,10 @@ describe('Swiss Minimalist UI Components & Hook Suite', () => {
       const completedAnalysis = getOverdueAnalysis(past15m, 'completed', now);
       expect(completedAnalysis.isOverdue).toBe(false);
 
+      // Unarmed inbox dumps are never overdue even if dueDate is in the past
+      const inboxAnalysis = getOverdueAnalysis(past15m, 'pending', now, false);
+      expect(inboxAnalysis.isOverdue).toBe(false);
+
       // Future task is not overdue
       const futureDate = new Date(2026, 8, 10, 15, 0, 0);
       const futureAnalysis = getOverdueAnalysis(futureDate, 'pending', now);
@@ -170,7 +174,7 @@ describe('Swiss Minimalist UI Components & Hook Suite', () => {
   });
 
   describe('4. QuickCaptureBar Component', () => {
-    it('renders input and 4 horizontal chips (+15M, +1H, TONIGHT, TOMORROW 9AM)', async () => {
+    it('renders input and capture chips (INBOX, +15M, +1H, TONIGHT, TOMORROW 9AM)', async () => {
       let renderer: any = null;
       const onCreate = jest.fn();
 
@@ -182,6 +186,7 @@ describe('Swiss Minimalist UI Components & Hook Suite', () => {
         );
       });
 
+      expect(renderer.root.findByProps({ testID: 'chip-inbox' })).toBeDefined();
       expect(renderer.root.findByProps({ testID: 'chip-15m' })).toBeDefined();
       expect(renderer.root.findByProps({ testID: 'chip-1h' })).toBeDefined();
       expect(renderer.root.findByProps({ testID: 'chip-evening' })).toBeDefined();
@@ -253,10 +258,77 @@ describe('Swiss Minimalist UI Components & Hook Suite', () => {
       const callArg = onCreate.mock.calls[0][0];
       expect(callArg.title).toBe('Draft Swiss UI spec');
       expect(callArg.preset).toBe('1h');
+      expect(callArg.armed).toBe(true);
       expect(callArg.dueDate.getTime()).toBeGreaterThan(Date.now());
 
       // Input is cleared
       expect(input.props.value).toBe('');
+
+      act(() => {
+        renderer.unmount();
+      });
+    });
+
+    it('dumps to unarmed inbox by default and expands lingo', async () => {
+      let renderer: any = null;
+      const onCreate = jest.fn();
+
+      await act(async () => {
+        renderer = ReactTestRenderer.create(
+          <ThemeProvider initialMode="light">
+            <QuickCaptureBar onCreateReminder={onCreate} />
+          </ThemeProvider>
+        );
+      });
+
+      const input = renderer.root.findByProps({ testID: 'quick-capture-input' });
+      act(() => {
+        input.props.onChangeText('c mom');
+      });
+
+      await act(async () => {
+        await renderer.root.findByProps({ testID: 'quick-capture-submit' }).props.onPress();
+      });
+
+      expect(onCreate).toHaveBeenCalledTimes(1);
+      const callArg = onCreate.mock.calls[0][0];
+      expect(callArg.title).toBe('call mom');
+      expect(callArg.preset).toBe('inbox');
+      expect(callArg.armed).toBe(false);
+
+      act(() => {
+        renderer.unmount();
+      });
+    });
+
+    it('splits multi-line paste into discrete items on submission with lingo and time inference', async () => {
+      let renderer: any = null;
+      const onCreate = jest.fn();
+
+      await act(async () => {
+        renderer = ReactTestRenderer.create(
+          <ThemeProvider initialMode="light">
+            <QuickCaptureBar onCreateReminder={onCreate} />
+          </ThemeProvider>
+        );
+      });
+
+      const input = renderer.root.findByProps({ testID: 'quick-capture-input' });
+      act(() => {
+        input.props.onChangeText('buy milk\ncall plumber\npay bill tonight');
+      });
+
+      await act(async () => {
+        await renderer.root.findByProps({ testID: 'quick-capture-submit' }).props.onPress();
+      });
+
+      expect(onCreate).toHaveBeenCalledTimes(3);
+      expect(onCreate.mock.calls[0][0].title).toBe('buy milk');
+      expect(onCreate.mock.calls[0][0].armed).toBe(false);
+      expect(onCreate.mock.calls[1][0].title).toBe('call plumber');
+      expect(onCreate.mock.calls[1][0].armed).toBe(false);
+      expect(onCreate.mock.calls[2][0].title).toBe('pay electricity bill');
+      expect(onCreate.mock.calls[2][0].armed).toBe(true);
 
       act(() => {
         renderer.unmount();

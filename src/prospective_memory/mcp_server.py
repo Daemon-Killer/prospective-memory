@@ -142,8 +142,127 @@ def missed_summary(minutes: int = 60) -> dict[str, Any]:
 
         return remote.missed_summary(minutes=minutes)
     from prospective_memory.db import missed_summary as _missed
-
     return _missed(minutes=minutes)
+
+
+@mcp.tool()
+def list_reminders(
+    status: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """List reminders from the unified Remy Reminders ledger (pending, snoozed, completed)."""
+    if _remote():
+        from prospective_memory import remote
+
+        items = remote.list_reminders(status=status)[:limit]
+        return {"total": len(items), "reminders": items}
+    from prospective_memory.db import list_reminders as _list_rem
+
+    items = _list_rem(status=status)[:limit]
+    return {"total": len(items), "reminders": [r.model_dump(mode="json") for r in items]}
+
+
+@mcp.tool()
+def create_reminder(
+    title: str,
+    due_date: str | None = None,
+    armed: bool = True,
+    notes: str | None = None,
+) -> dict[str, Any]:
+    """Create a new reminder in the unified ledger. If armed=false, creates an unarmed inbox item."""
+    from datetime import datetime, timezone, timedelta
+    from uuid import uuid4
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+
+    effective_title = title
+    if due_date:
+        due_iso = due_date
+    elif armed:
+        from prospective_memory.infer import infer_time_cue
+        cue = infer_time_cue(title, now)
+        if cue:
+            due_iso = cue["due_date"].isoformat()
+            effective_title = cue.get("stripped_title") or title
+        else:
+            due_iso = (now + timedelta(hours=1)).isoformat()
+    else:
+        due_iso = now_iso
+
+    rem_id = uuid4().hex[:16]
+
+    if _remote():
+        from prospective_memory import remote
+
+        payload = {
+            "id": rem_id,
+            "title": effective_title,
+            "notes": notes,
+            "dueDate": due_iso,
+            "status": "pending",
+            "snoozeCount": 0,
+            "createdAt": now_iso,
+            "updatedAt": now_iso,
+            "armed": armed,
+        }
+        return remote.upsert_reminder(payload)
+    from prospective_memory.db import upsert_reminder
+    from prospective_memory.models import ReminderIn
+
+    rem = ReminderIn(
+        id=rem_id,
+        title=effective_title,
+        notes=notes,
+        dueDate=due_iso,
+        status="pending",
+        snoozeCount=0,
+        createdAt=now_iso,
+        updatedAt=now_iso,
+        armed=armed,
+    )
+    saved = upsert_reminder(rem)
+    return saved.model_dump(mode="json")
+
+
+@mcp.tool()
+def snooze_reminder(
+    reminder_id: str,
+    target_iso: str | None = None,
+    minutes: int = 15,
+) -> dict[str, Any]:
+    """Snooze a reminder to a target ISO date/time or by N minutes."""
+    from datetime import datetime, timezone, timedelta
+    if target_iso:
+        target = target_iso
+    else:
+        safe_minutes = max(1, minutes)
+        target = (datetime.now(timezone.utc) + timedelta(minutes=safe_minutes)).isoformat()
+
+    if _remote():
+        from prospective_memory import remote
+
+        return remote.snooze_reminder(reminder_id, target)
+    from prospective_memory.db import snooze_reminder_db
+
+    updated = snooze_reminder_db(reminder_id, target)
+    if not updated:
+        return {"error": "not found", "reminder_id": reminder_id}
+    return updated.model_dump(mode="json")
+
+
+@mcp.tool()
+def complete_reminder(reminder_id: str) -> dict[str, Any]:
+    """Mark a reminder completed in the unified ledger."""
+    if _remote():
+        from prospective_memory import remote
+
+        return remote.complete_reminder(reminder_id)
+    from prospective_memory.db import complete_reminder_db
+
+    updated = complete_reminder_db(reminder_id)
+    if not updated:
+        return {"error": "not found", "reminder_id": reminder_id}
+    return updated.model_dump(mode="json")
 
 
 def run_stdio() -> None:
@@ -152,3 +271,4 @@ def run_stdio() -> None:
 
 if __name__ == "__main__":
     run_stdio()
+

@@ -225,6 +225,19 @@ describe('NotificationService & Background Task Suite', () => {
       const notifId = await webService.scheduleReminderNotification(reminder);
       expect(notifId).toBeNull();
     });
+
+    it('does not schedule an alarm for an unarmed inbox dump', async () => {
+      Object.defineProperty(Platform, 'OS', { value: 'android', configurable: true });
+      const reminder = await storage.create({
+        title: 'call mom',
+        dueDate: new Date(Date.now() + 3600000).toISOString(),
+        armed: false,
+      });
+
+      const notifId = await service.scheduleReminderNotification(reminder);
+      expect(notifId).toBeNull();
+      expect(mockNotifications.scheduleNotificationAsync).not.toHaveBeenCalled();
+    });
   });
 
   // =========================================================================

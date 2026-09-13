@@ -80,6 +80,7 @@ class ReminderIn(BaseModel):
     updatedAt: str = Field(min_length=1, max_length=64)
     completedAt: str | None = Field(default=None, max_length=64)
     isDeleted: bool = False
+    armed: bool = True
 
 
 class ReminderOut(BaseModel):
@@ -94,6 +95,7 @@ class ReminderOut(BaseModel):
     updatedAt: str
     completedAt: str | None = None
     isDeleted: bool = False
+    armed: bool = True
 
 
 class ReminderSyncBatchIn(BaseModel):
@@ -104,3 +106,8 @@ class ReminderSyncBatchIn(BaseModel):
 class ReminderSyncBatchOut(BaseModel):
     synced: list[ReminderOut] = Field(default_factory=list)
     serverSyncTime: str
+
+
+class ReminderSnoozeIn(BaseModel):
+    dueDate: str = Field(min_length=1, max_length=64)
+

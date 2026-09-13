@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 from fastapi.testclient import TestClient
@@ -201,3 +201,232 @@ def test_batch_sync_last_write_wins_and_since_filter(tmp_path: Path, monkeypatch
     deleted = batch_sync_reminders([tombstone], client_sync_time="2026-09-12T11:00:00.000Z", db_path=db)
     assert deleted.synced[0].isDeleted is True
     assert list_reminders(db_path=db, include_deleted=False) == []
+
+
+def test_unarmed_inbox_roundtrip(tmp_path: Path, monkeypatch) -> None:
+    db = tmp_path / "inbox.db"
+    monkeypatch.setattr(settings, "db_path", db)
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+
+    dumped = ReminderIn(
+        id="inbox-1",
+        title="call mom",
+        dueDate="2026-09-13T10:00:00.000Z",
+        status="pending",
+        createdAt="2026-09-13T10:00:00.000Z",
+        updatedAt="2026-09-13T10:00:00.000Z",
+        armed=False,
+    )
+    saved = upsert_reminder(dumped, db_path=db)
+    assert saved.armed is False
+
+    listed = list_reminders(db_path=db)
+    assert listed[0].armed is False
+
+    defaulted = ReminderIn(
+        id="timed-1",
+        title="Buy groceries",
+        dueDate="2026-09-13T18:00:00.000Z",
+        status="pending",
+        createdAt="2026-09-13T10:00:00.000Z",
+        updatedAt="2026-09-13T10:00:00.000Z",
+    )
+    timed = upsert_reminder(defaulted, db_path=db)
+    assert timed.armed is True
+
+
+def test_converged_ledger_capture_and_sync(tmp_path: Path, monkeypatch) -> None:
+    from prospective_memory.db import (
+        capture,
+        complete_reminder_db,
+        list_tasks,
+        set_status,
+        snooze_reminder_db,
+        stats,
+    )
+    from prospective_memory.models import TaskStatus
+
+    db = tmp_path / "converged.db"
+    monkeypatch.setattr(settings, "db_path", db)
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+
+    # 1. Capture via legacy thought logging -> creates Task AND Reminder in one ledger
+    task = capture("dahi lena", db_path=db)
+    assert task.text == "dahi lena"
+
+    reminders = list_reminders(db_path=db)
+    assert len(reminders) == 1
+    assert reminders[0].id == task.id
+    assert reminders[0].title == "dahi lena"
+    assert reminders[0].armed is False  # Untimed thought dump -> unarmed inbox
+
+    # 2. Mark done via task set_status -> mirrors to reminder
+    set_status(task.id, TaskStatus.DONE, db_path=db)
+    reminders = list_reminders(db_path=db)
+    assert reminders[0].status == "completed"
+
+    # 3. Create reminder via upsert_reminder -> mirrors to tasks
+    rem2 = ReminderIn(
+        id="rem-remy-1",
+        title="Doctor appointment",
+        dueDate="2026-09-14T09:00:00.000Z",
+        status="pending",
+        createdAt="2026-09-13T10:00:00.000Z",
+        updatedAt="2026-09-13T10:00:00.000Z",
+        armed=True,
+    )
+    upsert_reminder(rem2, db_path=db)
+    tasks = list_tasks(status="open", db_path=db)
+    matching_task = next((t for t in tasks if t.id == "rem-remy-1"), None)
+    assert matching_task is not None
+    assert matching_task.text == "Doctor appointment"
+
+    # 4. Snooze reminder -> updates reminder & keeps task open
+    snoozed = snooze_reminder_db("rem-remy-1", "2026-09-14T10:00:00.000Z", db_path=db)
+    assert snoozed is not None
+    assert snoozed.status == "snoozed"
+    assert snoozed.snoozeCount == 1
+
+    # 5. Complete reminder -> marks task DONE
+    completed = complete_reminder_db("rem-remy-1", db_path=db)
+    assert completed is not None
+    assert completed.status == "completed"
+    tasks_open = list_tasks(status="open", db_path=db)
+    assert not any(t.id == "rem-remy-1" for t in tasks_open)
+
+    # 6. Check stats has reminders breakdown
+    st = stats(db_path=db)
+    assert "reminders" in st
+    assert st["reminders"]["total"] == 2
+
+
+def test_api_reminder_snooze_and_complete(tmp_path: Path, monkeypatch) -> None:
+    db = tmp_path / "api_snooze.db"
+    token = "secret-token"
+    monkeypatch.setattr(settings, "db_path", db)
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    monkeypatch.setattr(settings, "token", token)
+
+    client = TestClient(app)
+    headers = {"X-PMEM-TOKEN": token}
+
+    # Create a reminder
+    payload = {
+        "id": "rem-api-1",
+        "title": "Pay utility bill",
+        "dueDate": "2026-09-14T12:00:00.000Z",
+        "status": "pending",
+        "createdAt": "2026-09-13T10:00:00.000Z",
+        "updatedAt": "2026-09-13T10:00:00.000Z",
+        "armed": True,
+    }
+    create_res = client.post("/v1/reminders", json=payload, headers=headers)
+    assert create_res.status_code == 200
+
+    # Snooze
+    snooze_res = client.post(
+        "/v1/reminders/rem-api-1/snooze",
+        json={"dueDate": "2026-09-14T13:00:00.000Z"},
+        headers=headers,
+    )
+    assert snooze_res.status_code == 200
+    snooze_data = snooze_res.json()
+    assert snooze_data["status"] == "snoozed"
+    assert snooze_data["dueDate"] == "2026-09-14T13:00:00.000Z"
+    assert snooze_data["snoozeCount"] == 1
+
+    # Complete
+    comp_res = client.post("/v1/reminders/rem-api-1/complete", headers=headers)
+    assert comp_res.status_code == 200
+    assert comp_res.json()["status"] == "completed"
+
+
+def test_fastmcp_reminder_tools(tmp_path: Path, monkeypatch) -> None:
+    from prospective_memory.mcp_server import (
+        complete_reminder,
+        create_reminder,
+        list_reminders as mcp_list_reminders,
+        snooze_reminder,
+    )
+
+    db = tmp_path / "mcp_test.db"
+    monkeypatch.setattr(settings, "db_path", db)
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    monkeypatch.setattr(settings, "api_url", None)  # Ensure local mode
+
+    # 1. Create reminder via FastMCP
+    created = create_reminder(title="Submit expense report", armed=False)
+    assert created["title"] == "Submit expense report"
+    assert created["armed"] is False
+    rem_id = created["id"]
+
+    # 2. List reminders via FastMCP
+    listing = mcp_list_reminders()
+    assert listing["total"] >= 1
+    found = next((r for r in listing["reminders"] if r["id"] == rem_id), None)
+    assert found is not None
+
+    # 3. Snooze reminder via FastMCP
+    snoozed = snooze_reminder(rem_id, minutes=30)
+    assert snoozed["status"] == "snoozed"
+    assert snoozed["snoozeCount"] == 1
+    assert snoozed["armed"] is True
+
+    # 4. Complete reminder via FastMCP
+    completed = complete_reminder(rem_id)
+    assert completed["status"] == "completed"
+
+
+def test_time_cue_capture_and_trigger_detail_sync(tmp_path: Path, monkeypatch) -> None:
+    from datetime import datetime, timezone
+    from prospective_memory.db import capture, list_tasks, snooze_reminder_db
+    from prospective_memory.models import TriggerType
+
+    db = tmp_path / "cue_sync.db"
+    monkeypatch.setattr(settings, "db_path", db)
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+
+    # 1. Capture with temporal cue & category: "call doctor tomorrow morning"
+    now_utc = datetime.now(timezone.utc)
+    task = capture("call doctor tomorrow morning", db_path=db)
+    assert task.category == "people"
+    assert task.trigger_type == TriggerType.TIME
+    assert "tomorrow morning" in task.trigger_detail
+
+    rems = list_reminders(db_path=db)
+    assert len(rems) == 1
+    rem = rems[0]
+    assert rem.armed is True
+    # Due date should be tomorrow morning (in the future)
+    due_dt = datetime.fromisoformat(rem.dueDate)
+    assert due_dt > now_utc
+
+    # 2. Snooze reminder updates mirrored task's trigger_type and trigger_detail
+    target_snooze = "2026-10-01T15:00:00.000Z"
+    snoozed = snooze_reminder_db(rem.id, target_snooze, db_path=db)
+    assert snoozed is not None
+    assert snoozed.status == "snoozed"
+
+    tasks = list_tasks(status="open", db_path=db)
+    matched_task = next(t for t in tasks if t.id == rem.id)
+    assert matched_task.trigger_type == TriggerType.TIME
+    assert matched_task.trigger_detail == target_snooze
+
+
+def test_fastmcp_time_inference(tmp_path: Path, monkeypatch) -> None:
+    from datetime import datetime, timezone
+    from prospective_memory.mcp_server import create_reminder
+
+    db = tmp_path / "mcp_cue.db"
+    monkeypatch.setattr(settings, "db_path", db)
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    monkeypatch.setattr(settings, "api_url", None)
+
+    # Calling create_reminder without explicit due_date but with armed=True and time cue
+    created = create_reminder(title="Submit PR tomorrow morning", armed=True)
+    assert created["armed"] is True
+    due_dt = datetime.fromisoformat(created["dueDate"])
+    assert due_dt > datetime.now(timezone.utc)
+
+
+

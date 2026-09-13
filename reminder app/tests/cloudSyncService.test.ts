@@ -16,7 +16,7 @@ describe('CloudSyncService', () => {
     await storageService.init();
 
     fetchMock = jest.fn();
-    global.fetch = fetchMock as unknown as typeof fetch;
+    (globalThis as any).fetch = fetchMock;
 
     service = new CloudSyncService();
   });

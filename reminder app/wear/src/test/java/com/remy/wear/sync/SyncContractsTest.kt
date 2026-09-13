@@ -158,4 +158,29 @@ class SyncContractsTest {
         }
         assertThat(ex.message).isEqualTo("Payload bytes cannot be empty")
     }
+
+    @Test
+    fun unarmedReminderSyncRoundtrip_preservesArmedFalse() {
+        val unarmedDto = SyncContracts.ReminderSyncDto(
+            id = "remy-unarmed-999",
+            title = "Zero-friction raw brain dump",
+            notes = "Spoken note without time constraint",
+            dueDate = 1_700_086_400_000L,
+            createdAt = 1_700_000_000_000L,
+            updatedAt = 1_700_000_000_000L,
+            armed = false
+        )
+
+        val json = unarmedDto.toJson()
+        assertThat(json.getBoolean("armed")).isFalse()
+
+        val parsed = SyncContracts.ReminderSyncDto.fromJson(json)
+        assertThat(parsed.armed).isFalse()
+
+        val entity = parsed.toEntity()
+        assertThat(entity.armed).isFalse()
+
+        val restoredDto = SyncContracts.ReminderSyncDto.fromEntity(entity)
+        assertThat(restoredDto.armed).isFalse()
+    }
 }

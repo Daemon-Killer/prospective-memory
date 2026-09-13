@@ -5,7 +5,7 @@ import {
   RefreshControl,
   View,
 } from 'react-native';
-import { Reminder } from '../types/reminder';
+import { Reminder, isReminderArmed } from '../types/reminder';
 import { ThemeColors } from '../types/theme';
 import { ReminderCard } from './ReminderCard';
 import { EmptyState } from './EmptyState';
@@ -46,10 +46,18 @@ export const ReminderList: React.FC<ReminderListProps> = ({
   }
 
 
-  // Chronological sort: Active & Overdue first -> Completed last
+  // Inbox (unarmed) first, then armed by dueDate, completed last
   const sortedReminders = [...reminders].sort((a, b) => {
     if (a.status === 'completed' && b.status !== 'completed') return 1;
     if (a.status !== 'completed' && b.status === 'completed') return -1;
+
+    const aInbox = !isReminderArmed(a);
+    const bInbox = !isReminderArmed(b);
+    if (aInbox && !bInbox) return -1;
+    if (!aInbox && bInbox) return 1;
+    if (aInbox && bInbox) {
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    }
 
     const timeA = new Date(a.dueDate).getTime();
     const timeB = new Date(b.dueDate).getTime();

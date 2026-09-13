@@ -7,6 +7,7 @@ import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
+import com.remy.wear.MainActivity
 import com.remy.wear.data.local.ReminderDao
 import com.remy.wear.data.local.RemyDatabase
 
@@ -25,7 +26,7 @@ class RemyComplicationService : SuspendingComplicationDataSourceService() {
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
         val nearestReminder = reminderDao.getNearestActiveReminder()
         val nowMillis = System.currentTimeMillis()
-        val tapAction = createTapAction(this)
+        val tapAction = createTapAction(this, startVoiceCapture = (nearestReminder == null))
 
         return when (request.complicationType) {
             ComplicationType.SHORT_TEXT -> {
@@ -53,20 +54,28 @@ class RemyComplicationService : SuspendingComplicationDataSourceService() {
 
     companion object {
         const val TAP_ACTION_REQUEST_CODE = 2001
+        const val TAP_ACTION_VOICE_REQUEST_CODE = 2002
 
         /**
-         * Defensive PendingIntent creation: launches the app's entry activity.
+         * Defensive PendingIntent creation: launches the app's entry activity or direct voice capture.
          */
-        fun createTapAction(context: Context): PendingIntent? {
-            val launchIntent = context.packageManager?.getLaunchIntentForPackage(context.packageName)
+        fun createTapAction(context: Context, startVoiceCapture: Boolean = false): PendingIntent? {
+            val baseIntent = context.packageManager?.getLaunchIntentForPackage(context.packageName)
                 ?: Intent().apply {
                     setClassName(context.packageName, "com.remy.wear.MainActivity")
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 }
 
+            val launchIntent = Intent(baseIntent).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                if (startVoiceCapture) {
+                    putExtra(MainActivity.EXTRA_START_VOICE_CAPTURE, true)
+                }
+            }
+
+            val requestCode = if (startVoiceCapture) TAP_ACTION_VOICE_REQUEST_CODE else TAP_ACTION_REQUEST_CODE
             return PendingIntent.getActivity(
                 context,
-                TAP_ACTION_REQUEST_CODE,
+                requestCode,
                 launchIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )

@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" tools:replace="android:maxSdkVersion"/>
@@ -26,6 +28,31 @@
         <action android:name="android.intent.action.MAIN"/>
         <category android:name="android.intent.category.LAUNCHER"/>
       </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.SEND"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <data android:mimeType="text/plain"/>
+      </intent-filter>
     </activity>
+    <activity
+        android:name=".QuickCaptureActivity"
+        android:excludeFromRecents="true"
+        android:exported="true"
+        android:finishOnTaskLaunch="true"
+        android:launchMode="singleInstance"
+        android:noHistory="true"
+        android:showOnLockScreen="true"
+        android:showWhenLocked="true"
+        android:taskAffinity=""
+        android:theme="@android:style/Theme.Translucent.NoTitleBar"
+        android:windowSoftInputMode="stateAlwaysVisible|adjustResize"/>
+    <service
+        android:name=".BubbleService"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+      <property
+          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+          android:value="Always-available quick thought capture overlay"/>
+    </service>
   </application>
 </manifest>

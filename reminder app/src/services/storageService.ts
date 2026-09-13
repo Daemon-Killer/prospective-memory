@@ -8,6 +8,12 @@ import {
 } from '../types/reminder';
 import { generateUUID } from '../utils/idGenerator';
 
+function readArmed(item: { armed?: unknown }): boolean | undefined {
+  if (typeof item.armed === 'boolean') return item.armed;
+  if (item.armed === 0 || item.armed === 1) return Boolean(item.armed);
+  return undefined;
+}
+
 export const STORAGE_KEY = '@remy/reminders_v1';
 export const STORAGE_VERSION = 1;
 
@@ -141,6 +147,7 @@ export class StorageService implements IReminderRepository {
               const isoCreatedAt = item.createdAt ? (parseSafeISO(item.createdAt) ?? nowIso) : nowIso;
               const isoUpdatedAt = item.updatedAt ? (parseSafeISO(item.updatedAt) ?? nowIso) : nowIso;
               const isoCompletedAt = item.completedAt ? parseSafeISO(item.completedAt) : null;
+              const armed = readArmed(item);
 
               const reminder: Reminder = {
                 id: String(item.id),
@@ -157,6 +164,7 @@ export class StorageService implements IReminderRepository {
                 completedAt: isoCompletedAt,
                 notificationId: item.notificationId !== undefined && item.notificationId !== null ? String(item.notificationId) : null,
                 ...(item.isDeleted ? { isDeleted: true } : {}),
+                ...(armed !== undefined ? { armed } : {}),
               };
 
               // Non-destructive: Only insert disk record if key is not already populated in memory
@@ -292,6 +300,7 @@ export class StorageService implements IReminderRepository {
       updatedAt: now,
       completedAt: null,
       notificationId: null,
+      armed: input.armed !== false,
     };
 
     // Optimistic cache update & immediate UI notification
@@ -345,6 +354,7 @@ export class StorageService implements IReminderRepository {
     const now = new Date().toISOString();
     let status = existing.status;
     let completedAt = existing.completedAt;
+    let armed = existing.armed;
 
     if (updates.status !== undefined) {
       status = updates.status;
@@ -355,6 +365,12 @@ export class StorageService implements IReminderRepository {
       }
     }
 
+    if (updates.armed !== undefined) {
+      armed = updates.armed;
+    } else if (updates.dueDate !== undefined) {
+      armed = true;
+    }
+
     const updated: Reminder = {
       ...existing,
       title: trimmedTitle,
@@ -363,6 +379,7 @@ export class StorageService implements IReminderRepository {
       status,
       completedAt,
       updatedAt: now,
+      ...(armed !== undefined ? { armed } : {}),
     };
 
     this.cache.set(id, updated);
@@ -400,6 +417,7 @@ export class StorageService implements IReminderRepository {
       lastSnoozedAt: now,
       completedAt: null,
       updatedAt: now,
+      armed: true,
     };
 
     this.cache.set(id, updated);
@@ -610,6 +628,7 @@ export class StorageService implements IReminderRepository {
         continue;
       }
 
+      const remoteArmed = readArmed(item);
       this.cache.set(item.id, {
         id: String(item.id),
         title: String(item.title || '').trim() || existing?.title || 'Untitled',
@@ -624,6 +643,11 @@ export class StorageService implements IReminderRepository {
         updatedAt: parseSafeISO(item.updatedAt) || new Date().toISOString(),
         completedAt: item.completedAt ? parseSafeISO(item.completedAt) : null,
         notificationId: existing?.notificationId ?? null,
+        ...(remoteArmed !== undefined
+          ? { armed: remoteArmed }
+          : existing?.armed !== undefined
+            ? { armed: existing.armed }
+            : {}),
       });
       changed = true;
     }

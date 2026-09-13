@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -12,33 +12,39 @@ import {
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemeColors } from '../types/theme';
-import { SnoozePreset } from '../types/reminder';
 import {
-  calculate15Minutes,
-  calculate1Hour,
-  calculateThisEvening,
-  calculateTomorrowMorning,
-} from '../utils/snoozeCalculator';
+  CaptureChip,
+  CapturePreset,
+  compileCapture,
+  compileMultiLineCapture,
+  DEFAULT_LINGO,
+  getStoredLingo,
+} from '../utils/captureCompiler';
 import { useTheme } from '../theme/ThemeContext';
 
-export type QuickChipPreset = '15m' | '1h' | 'evening' | 'tomorrow_morning';
+export type QuickChipPreset = CaptureChip;
 
 interface PresetChipItem {
   id: QuickChipPreset;
   label: string;
-  calc: (now: Date) => Date;
-  presetEnum: SnoozePreset;
+  presetEnum: CapturePreset;
 }
 
 export const PRESET_CHIPS: PresetChipItem[] = [
-  { id: '15m', label: '+15M', calc: (now) => calculate15Minutes(now), presetEnum: '15m' },
-  { id: '1h', label: '+1H', calc: (now) => calculate1Hour(now), presetEnum: '1h' },
-  { id: 'evening', label: 'TONIGHT', calc: (now) => calculateThisEvening(now), presetEnum: 'evening' },
-  { id: 'tomorrow_morning', label: 'TOMORROW 9AM', calc: (now) => calculateTomorrowMorning(now), presetEnum: 'tomorrow_morning' },
+  { id: 'inbox', label: 'INBOX', presetEnum: 'inbox' },
+  { id: '15m', label: '+15M', presetEnum: '15m' },
+  { id: '1h', label: '+1H', presetEnum: '1h' },
+  { id: 'evening', label: 'TONIGHT', presetEnum: 'evening' },
+  { id: 'tomorrow_morning', label: 'TOMORROW 9AM', presetEnum: 'tomorrow_morning' },
 ];
 
 export interface QuickCaptureBarProps {
-  onCreateReminder: (input: { title: string; dueDate: Date; preset?: SnoozePreset }) => Promise<void> | void;
+  onCreateReminder: (input: {
+    title: string;
+    dueDate: Date;
+    preset?: CapturePreset;
+    armed?: boolean;
+  }) => Promise<void> | void;
   themeColors?: ThemeColors;
   defaultPreset?: QuickChipPreset;
   placeholder?: string;
@@ -57,8 +63,8 @@ function useSafeInsets() {
 export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
   onCreateReminder,
   themeColors: propColors,
-  defaultPreset = '15m',
-  placeholder = 'RECORD INTENTION...',
+  defaultPreset = 'inbox',
+  placeholder = 'DAHI LENA  ·  C MOM  ·  TONIGHT',
   autoFocus = false,
   testID = 'quick-capture-bar',
 }) => {
@@ -69,7 +75,22 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
   const [text, setText] = useState('');
   const [selectedChip, setSelectedChip] = useState<QuickChipPreset>(defaultPreset);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [lingoTable, setLingoTable] = useState<string>(DEFAULT_LINGO);
   const isSubmittingRef = useRef(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    getStoredLingo()
+      .then((table) => {
+        if (isMounted && table) {
+          setLingoTable(table);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleChipSelect = (chipId: QuickChipPreset) => {
     if (Platform.OS !== 'web') {
@@ -86,12 +107,12 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
     const trimmed = text.trim();
     if (!trimmed || isSubmittingRef.current) return;
 
+    const drafts = compileMultiLineCapture(trimmed, selectedChip, new Date(), lingoTable);
+    if (drafts.length === 0) return;
+
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     try {
-      const activeChip = PRESET_CHIPS.find((c) => c.id === selectedChip) || PRESET_CHIPS[0];
-      const targetDate = activeChip.calc(new Date());
-
       if (Platform.OS !== 'web') {
         try {
           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -100,11 +121,14 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
         }
       }
 
-      await onCreateReminder({
-        title: trimmed,
-        dueDate: targetDate,
-        preset: activeChip.presetEnum,
-      });
+      for (const draft of drafts) {
+        await onCreateReminder({
+          title: draft.title,
+          dueDate: draft.dueDate,
+          preset: draft.preset,
+          armed: draft.armed,
+        });
+      }
 
       setText('');
     } finally {
@@ -114,6 +138,12 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
   };
 
   const canSubmit = text.trim().length > 0 && !isSubmitting;
+  const multiDrafts = useMemo(
+    () => (text.trim() ? compileMultiLineCapture(text, selectedChip, new Date(), lingoTable) : []),
+    [text, selectedChip, lingoTable]
+  );
+  const isMultiLine = multiDrafts.length > 1;
+  const singleDraft = multiDrafts[0] || null;
 
   return (
     <KeyboardAvoidingView
@@ -181,6 +211,7 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
                 color: themeColors.textPrimary,
                 backgroundColor: themeColors.surfaceSubtle,
                 borderColor: themeColors.border,
+                height: text.includes('\n') ? 72 : 44,
               },
             ]}
             placeholder={placeholder}
@@ -188,10 +219,11 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
             value={text}
             onChangeText={setText}
             autoFocus={autoFocus}
-            returnKeyType="done"
-            onSubmitEditing={handleCapture}
+            returnKeyType={text.includes('\n') ? 'default' : 'done'}
+            multiline={text.includes('\n')}
+            onSubmitEditing={text.includes('\n') ? undefined : handleCapture}
             editable={!isSubmitting}
-            maxLength={255}
+            maxLength={10000}
           />
           <TouchableOpacity
             testID="quick-capture-submit"
@@ -202,6 +234,7 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
               {
                 backgroundColor: canSubmit ? themeColors.textPrimary : themeColors.surfaceSubtle,
                 borderColor: canSubmit ? themeColors.textPrimary : themeColors.border,
+                height: text.includes('\n') ? 72 : 44,
               },
             ]}
             activeOpacity={0.7}
@@ -214,10 +247,33 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
                 },
               ]}
             >
-              ADD
+              {isMultiLine ? `ADD ${multiDrafts.length}` : 'ADD'}
             </Text>
           </TouchableOpacity>
         </View>
+        {isMultiLine ? (
+          <Text
+            testID="capture-preview"
+            style={[styles.previewText, { color: themeColors.accent || themeColors.textPrimary }]}
+          >
+            {`→ SPLIT ${multiDrafts.length} ITEMS (${multiDrafts.filter((d) => d.armed).length} TIMED, ${multiDrafts.filter((d) => !d.armed).length} INBOX)`}
+          </Text>
+        ) : singleDraft && (singleDraft.title !== text.trim() || singleDraft.armed) ? (
+          <Text
+            testID="capture-preview"
+            style={[styles.previewText, { color: themeColors.textSecondary }]}
+          >
+            → {singleDraft.title}
+            {singleDraft.armed ? ' · TIMED' : ' · INBOX'}
+          </Text>
+        ) : singleDraft ? (
+          <Text
+            testID="capture-preview"
+            style={[styles.previewText, { color: themeColors.textMuted }]}
+          >
+            INBOX — NO ALARM UNTIL YOU ARM IT
+          </Text>
+        ) : null}
       </View>
     </KeyboardAvoidingView>
   );
@@ -273,6 +329,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 1.5,
+  },
+  previewText: {
+    marginTop: 6,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
   },
 });
 

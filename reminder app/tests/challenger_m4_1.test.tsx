@@ -20,7 +20,7 @@ import * as Haptics from 'expo-haptics';
 
 import { ThemeProvider } from '../src/theme/ThemeContext';
 import { QuickCaptureBar, PRESET_CHIPS } from '../src/components/QuickCaptureBar';
-import { SnoozePreset } from '../src/types/reminder';
+import { CapturePreset } from '../src/utils/captureCompiler';
 
 describe('Challenger M4-1: QuickCaptureBar In-Flight Hardening & Concurrency Stress Suite', () => {
   const originalPlatformOS = Platform.OS;
@@ -203,7 +203,7 @@ describe('Challenger M4-1: QuickCaptureBar In-Flight Hardening & Concurrency Str
   describe('Sequential Unblocking & Lifecycle Liveness', () => {
     it('properly unlocks after each completion, enabling successive task creations', async () => {
       const createdItems: string[] = [];
-      const createReminder = jest.fn(async (input: { title: string; dueDate: Date; preset?: SnoozePreset }) => {
+      const createReminder = jest.fn(async (input: { title: string; dueDate: Date; preset?: CapturePreset }) => {
         createdItems.push(input.title);
         await new Promise((resolve) => setTimeout(resolve, 10));
       });

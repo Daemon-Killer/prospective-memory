@@ -14,7 +14,7 @@
 
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import { Reminder } from '../types/reminder';
+import { Reminder, isReminderArmed } from '../types/reminder';
 import { storageService, IReminderRepository } from './storageService';
 import {
   calculate15Minutes,
@@ -180,7 +180,7 @@ export class NotificationService implements INotificationService {
    * Schedules a local notification for an active reminder
    */
   async scheduleReminderNotification(reminder: Reminder): Promise<string | null> {
-    if (Platform.OS === 'web' || reminder.status === 'completed') {
+    if (Platform.OS === 'web' || reminder.status === 'completed' || !isReminderArmed(reminder)) {
       return null;
     }
 

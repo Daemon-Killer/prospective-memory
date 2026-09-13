@@ -22,6 +22,7 @@ object TileActionContracts {
     const val ACTION_PREFIX_SNOOZE_1H = "action_snooze_1h"
     const val ACTION_PREFIX_COMPLETE = "action_complete"
     const val ACTION_PREFIX_OPEN_APP = "action_open_app"
+    const val ACTION_PREFIX_VOICE_CAPTURE = "action_voice_capture"
 
     const val DELIMITER = ":"
 

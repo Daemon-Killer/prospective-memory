@@ -1,5 +1,6 @@
 package com.remy.reminders
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 
@@ -17,6 +18,22 @@ class MainActivity : ReactActivity() {
     // This is required for expo-splash-screen.
     setTheme(R.style.AppTheme);
     super.onCreate(null)
+    handleSendIntent(intent)
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    handleSendIntent(intent)
+  }
+
+  private fun handleSendIntent(intent: Intent?) {
+    if (intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
+      val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+      if (!text.isNullOrBlank()) {
+        RemyCaptureModule.sharedText = text
+      }
+    }
   }
 
   /**

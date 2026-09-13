@@ -8,6 +8,7 @@ from prospective_memory.config import settings
 from prospective_memory.db import (
     batch_sync_reminders,
     capture,
+    complete_reminder_db,
     delete_reminder,
     ingest_jarvis_events,
     last_whatsapp,
@@ -16,6 +17,7 @@ from prospective_memory.db import (
     list_tasks,
     missed_summary,
     set_status,
+    snooze_reminder_db,
     stats,
     upsert_reminder,
 )
@@ -25,6 +27,7 @@ from prospective_memory.models import (
     JarvisBatchIn,
     ReminderIn,
     ReminderOut,
+    ReminderSnoozeIn,
     ReminderSyncBatchIn,
     ReminderSyncBatchOut,
     TaskStatus,
@@ -139,6 +142,20 @@ def create_app() -> FastAPI:
         if not ok:
             raise HTTPException(404, "not found")
         return {"ok": True, "id": reminder_id}
+
+    @app.post("/v1/reminders/{reminder_id}/snooze", response_model=ReminderOut, dependencies=[Depends(_check_token)])
+    def post_reminder_snooze(reminder_id: str, body: ReminderSnoozeIn) -> ReminderOut:
+        rem = snooze_reminder_db(reminder_id, target_date=body.dueDate)
+        if not rem:
+            raise HTTPException(404, "not found")
+        return rem
+
+    @app.post("/v1/reminders/{reminder_id}/complete", response_model=ReminderOut, dependencies=[Depends(_check_token)])
+    def post_reminder_complete(reminder_id: str) -> ReminderOut:
+        rem = complete_reminder_db(reminder_id)
+        if not rem:
+            raise HTTPException(404, "not found")
+        return rem
 
     return app
 

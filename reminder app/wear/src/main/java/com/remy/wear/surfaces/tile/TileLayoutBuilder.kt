@@ -69,6 +69,7 @@ object TileLayoutBuilder {
     const val ID_ACTION_SNOOZE_1H = "action_snooze_1h"
     const val ID_ACTION_COMPLETE = "action_complete"
     const val ID_ACTION_OPEN_APP = "action_open_app"
+    const val ID_ACTION_VOICE_CAPTURE = "action_voice_capture"
 
     private val TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
@@ -300,6 +301,40 @@ object TileLayoutBuilder {
             .setPrimaryLabelTextContent(primaryLabel)
             .setContent(contentColumn)
             .setPrimaryChipContent(openAppChip)
+            .build()
+    }
+
+    /**
+     * Builds a quick voice ingress chip that launches speech recognition directly.
+     */
+    fun buildVoiceCaptureChip(
+        context: Context,
+        deviceParams: DeviceParameters
+    ): CompactChip {
+        val voiceAction = ActionBuilders.LaunchAction.Builder()
+            .setAndroidActivity(
+                ActionBuilders.AndroidActivity.Builder()
+                    .setPackageName(context.packageName)
+                    .setClassName("com.remy.wear.MainActivity")
+                    .build()
+            )
+            .build()
+
+        return CompactChip.Builder(
+            context,
+            "+ VOICE",
+            ModifiersBuilders.Clickable.Builder()
+                .setId(ID_ACTION_VOICE_CAPTURE)
+                .setOnClick(voiceAction)
+                .build(),
+            deviceParams
+        )
+            .setChipColors(
+                ChipColors(
+                    argb(RemyTileTheme.COLOR_SURFACE_CHIP),
+                    argb(RemyTileTheme.COLOR_WHITE)
+                )
+            )
             .build()
     }
 

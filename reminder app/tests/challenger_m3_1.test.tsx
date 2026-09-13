@@ -26,6 +26,7 @@ import { useReminders } from '../src/hooks/useReminders';
 import { StorageService, storageService } from '../src/services/storageService';
 import { NotificationService, notificationService } from '../src/services/notificationService';
 import { Reminder, CreateReminderInput, SnoozePreset } from '../src/types/reminder';
+import { CapturePreset } from '../src/utils/captureCompiler';
 
 // Helper Theme Consumer
 interface ThemeConsumerProps {
@@ -205,8 +206,8 @@ describe('Challenger M3-1: Empirical UI State Transitions & Concurrency Stress S
   // =========================================================================
   describe('2. Rapid Task Creation via QuickCaptureBar Stress', () => {
     it('creates 50 tasks across alternating chips with proper dueDate calculations', async () => {
-      const createdInputs: { title: string; dueDate: Date; preset?: SnoozePreset }[] = [];
-      const handleCreate = jest.fn(async (input: { title: string; dueDate: Date; preset?: SnoozePreset }) => {
+      const createdInputs: { title: string; dueDate: Date; preset?: CapturePreset }[] = [];
+      const handleCreate = jest.fn(async (input: { title: string; dueDate: Date; preset?: CapturePreset }) => {
         createdInputs.push(input);
       });
 

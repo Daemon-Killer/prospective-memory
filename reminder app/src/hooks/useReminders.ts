@@ -4,6 +4,7 @@ import {
   CreateReminderInput,
   UpdateReminderInput,
   SnoozePreset,
+  isReminderArmed,
 } from '../types/reminder';
 import { storageService, IReminderRepository } from '../services/storageService';
 import { notificationService, INotificationService } from '../services/notificationService';
@@ -131,7 +132,7 @@ export function useReminders(
   const overdueReminders = useMemo(
     () =>
       activeReminders.filter(
-        (r) => new Date(r.dueDate).getTime() < nowTs
+        (r) => isReminderArmed(r) && new Date(r.dueDate).getTime() < nowTs
       ),
     [activeReminders, nowTs]
   );
@@ -142,6 +143,7 @@ export function useReminders(
     const m = today.getMonth();
     const d = today.getDate();
     return activeReminders.filter((r) => {
+      if (!isReminderArmed(r)) return false;
       const dt = new Date(r.dueDate);
       return (
         dt.getFullYear() === y &&
@@ -159,8 +161,8 @@ export function useReminders(
         // 1. Optimistic creation in storage repository
         const created = await repo.create(input);
 
-        // 2. Schedule OS notification if due in future
-        if (new Date(created.dueDate).getTime() > Date.now()) {
+        // 2. Schedule OS notification if armed and due in future
+        if (isReminderArmed(created) && new Date(created.dueDate).getTime() > Date.now()) {
           const notifId = await notifier.scheduleReminderNotification(created);
           if (notifId && notifId !== created.notificationId) {
             await repo.setNotificationId(created.id, notifId);
@@ -189,8 +191,9 @@ export function useReminders(
           await notifier.cancelReminderNotification(existing.notificationId);
           await repo.setNotificationId(id, null);
         } else if (
-          (updates.dueDate || updates.status) &&
+          (updates.dueDate || updates.status || updates.armed) &&
           updated.status !== 'completed' &&
+          isReminderArmed(updated) &&
           new Date(updated.dueDate).getTime() > Date.now()
         ) {
           if (existing?.notificationId) {
@@ -256,7 +259,7 @@ export function useReminders(
           }
         } else {
           // Reopened: reschedule if due in future
-          if (new Date(toggled.dueDate).getTime() > Date.now()) {
+          if (isReminderArmed(toggled) && new Date(toggled.dueDate).getTime() > Date.now()) {
             const notifId = await notifier.scheduleReminderNotification(toggled);
             if (notifId) {
               await repo.setNotificationId(id, notifId);

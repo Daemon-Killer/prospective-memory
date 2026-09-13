@@ -396,4 +396,64 @@ class MainActivityTest {
         val titleView = cardView.findViewById<TextView>(R.id.reminder_title)
         assertThat(titleView.text.toString()).isEqualTo("Call Pharmacy")
     }
+
+    // =========================================================================
+    // 5. Voice Capture & Capture Philosophy Ingress Tests
+    // =========================================================================
+
+    @Test
+    fun voiceCapture_parsesNaturalLanguageCues_andUnarmedNotes() {
+        val now = 1_726_050_000_000L
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
+
+        // 1. Relative +15m cue -> armed
+        val r1 = activity.parseVoiceText("Buy whole milk +15m", now)
+        assertThat(r1.title).isEqualTo("Buy whole milk")
+        assertThat(r1.dueDate).isEqualTo(now + 15 * 60_000L)
+        assertThat(r1.armed).isTrue()
+
+        // 2. Relative 1h cue -> armed
+        val r2 = activity.parseVoiceText("Turn off sprinkler in 1 hour", now)
+        assertThat(r2.title).isEqualTo("Turn off sprinkler")
+        assertThat(r2.dueDate).isEqualTo(now + 60 * 60_000L)
+        assertThat(r2.armed).isTrue()
+
+        // 3. Tonight cue -> armed at 20:00
+        val r3 = activity.parseVoiceText("Read chapter 4 tonight", now)
+        assertThat(r3.title).isEqualTo("Read chapter 4")
+        assertThat(r3.armed).isTrue()
+
+        // 4. Raw capture thought without temporal cues -> armed = false!
+        val r4 = activity.parseVoiceText("Zero friction prospective memory insight", now)
+        assertThat(r4.title).isEqualTo("Zero friction prospective memory insight")
+        assertThat(r4.armed).isFalse()
+    }
+
+    @Test
+    fun voiceCapture_handleVoiceCapture_persistsToRoomAndDispatchesSurfaces() = runBlocking {
+        val now = 1_726_050_000_000L
+        MainActivity.clockOverride = { now }
+
+        val surfaceNotified = AtomicBoolean(false)
+        MainActivity.surfaceNotificationListener = {
+            surfaceNotified.set(true)
+        }
+
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
+
+        val captured = activity.handleVoiceCapture("Fix bicycle chain tomorrow")
+        assertThat(captured.title).isEqualTo("Fix bicycle chain")
+        assertThat(captured.armed).isTrue()
+        assertThat(captured.syncStatus).isEqualTo(ReminderEntity.SYNC_STATUS_PENDING_UPLOAD)
+
+        ShadowLooper.idleMainLooper()
+
+        val inDb = dao.getReminderById(captured.id)
+        assertThat(inDb).isNotNull()
+        assertThat(inDb?.title).isEqualTo("Fix bicycle chain")
+        assertThat(inDb?.armed).isTrue()
+        assertThat(surfaceNotified.get()).isTrue()
+    }
 }

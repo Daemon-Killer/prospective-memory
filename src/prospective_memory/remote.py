@@ -88,3 +88,61 @@ def missed_summary(minutes: int = 60) -> dict[str, Any]:
     )
     r.raise_for_status()
     return r.json()
+
+
+def list_reminders(
+    status: str | None = None,
+    since: str | None = None,
+    include_deleted: bool = False,
+) -> list[dict[str, Any]]:
+    params: dict[str, Any] = {"include_deleted": include_deleted}
+    if status:
+        params["status"] = status
+    if since:
+        params["since"] = since
+    r = httpx.get(f"{_base()}/v1/reminders", headers=_headers(), params=params, timeout=20.0)
+    r.raise_for_status()
+    return r.json()
+
+
+def upsert_reminder(reminder_data: dict[str, Any]) -> dict[str, Any]:
+    r = httpx.post(
+        f"{_base()}/v1/reminders",
+        headers=_headers(),
+        json=reminder_data,
+        timeout=20.0,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def delete_reminder(reminder_id: str) -> dict[str, Any]:
+    r = httpx.delete(
+        f"{_base()}/v1/reminders/{reminder_id}",
+        headers=_headers(),
+        timeout=20.0,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def snooze_reminder(reminder_id: str, due_date: str) -> dict[str, Any]:
+    r = httpx.post(
+        f"{_base()}/v1/reminders/{reminder_id}/snooze",
+        headers=_headers(),
+        json={"dueDate": due_date},
+        timeout=20.0,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def complete_reminder(reminder_id: str) -> dict[str, Any]:
+    r = httpx.post(
+        f"{_base()}/v1/reminders/{reminder_id}/complete",
+        headers=_headers(),
+        timeout=20.0,
+    )
+    r.raise_for_status()
+    return r.json()
+

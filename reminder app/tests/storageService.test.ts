@@ -391,6 +391,7 @@ describe('StorageService', () => {
       expect(created.lastSnoozedAt).toBeNull();
       expect(created.completedAt).toBeNull();
       expect(created.notificationId).toBeNull();
+      expect(created.armed).toBe(true);
       expect(created.createdAt).toBeDefined();
       expect(created.updatedAt).toBeDefined();
 
@@ -625,6 +626,21 @@ describe('StorageService', () => {
 
     it('throws error when toggling non-existent reminder', async () => {
       await expect(service.toggleComplete('non-existent')).rejects.toThrow(/not found/);
+    });
+  });
+
+  describe('Inbox arming', () => {
+    it('persists unarmed dumps and arms them on snooze', async () => {
+      const created = await service.create({
+        title: 'call mom',
+        dueDate: new Date().toISOString(),
+        armed: false,
+      });
+      expect(created.armed).toBe(false);
+
+      const snoozed = await service.snooze(created.id, new Date(Date.now() + 15 * 60 * 1000));
+      expect(snoozed.armed).toBe(true);
+      expect(snoozed.status).toBe('snoozed');
     });
   });
 

@@ -15,6 +15,13 @@ import {
   CloudSyncState,
   CloudConfig,
 } from '../services/cloudSyncService';
+import { remyCaptureService } from '../services/remyCaptureService';
+import {
+  getStoredLingo,
+  saveStoredLingo,
+  resetStoredLingo,
+  DEFAULT_LINGO,
+} from '../utils/captureCompiler';
 
 export interface CloudSyncModalProps {
   visible: boolean;
@@ -34,6 +41,10 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [enabledInput, setEnabledInput] = useState(config.enabled);
   const [lastMessage, setLastMessage] = useState<string | null>(null);
 
+  const [isBubbleActive, setIsBubbleActive] = useState<boolean>(false);
+  const [hasOverlayPermission, setHasOverlayPermission] = useState<boolean>(false);
+  const [lingoInput, setLingoInput] = useState<string>(DEFAULT_LINGO);
+
   useEffect(() => {
     const unsubscribe = cloudSyncService.subscribe((state, cfg) => {
       setSyncState(state);
@@ -44,6 +55,49 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     });
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    if (visible) {
+      remyCaptureService.isBubbleRunning().then(setIsBubbleActive).catch(() => {});
+      remyCaptureService.canDrawOverlays().then(setHasOverlayPermission).catch(() => {});
+      getStoredLingo().then(setLingoInput).catch(() => {});
+    }
+  }, [visible]);
+
+  const handleToggleBubble = async () => {
+    if (isBubbleActive) {
+      await remyCaptureService.stopBubble();
+      setIsBubbleActive(false);
+      setLastMessage('Floating bubble stopped.');
+    } else {
+      const allowed = await remyCaptureService.canDrawOverlays();
+      if (!allowed) {
+        setLastMessage('Overlay permission required. Please grant permission in Settings.');
+        await remyCaptureService.requestOverlayPermission();
+        return;
+      }
+      const started = await remyCaptureService.startBubble();
+      if (started) {
+        setIsBubbleActive(true);
+        setLastMessage('Floating bubble activated.');
+      } else {
+        setLastMessage('Failed to start bubble service.');
+      }
+    }
+  };
+
+  const handleSaveLingo = async () => {
+    await saveStoredLingo(lingoInput);
+    await remyCaptureService.setLingoTable(lingoInput);
+    setLastMessage('Lingo rules updated.');
+  };
+
+  const handleResetLingo = async () => {
+    await resetStoredLingo();
+    await remyCaptureService.setLingoTable(DEFAULT_LINGO);
+    setLingoInput(DEFAULT_LINGO);
+    setLastMessage('Lingo rules reset to default.');
+  };
 
   const handleSyncNow = async () => {
     setLastMessage('Syncing with cloud...');
@@ -61,6 +115,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       token: tokenInput,
       enabled: enabledInput,
     });
+    await remyCaptureService.syncCloudConfig(urlInput, tokenInput);
     setLastMessage('Configuration saved.');
   };
 
@@ -230,6 +285,95 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 Save Settings
               </Text>
             </TouchableOpacity>
+
+            {/* Ingress & Floating Capture Bubble */}
+            <View style={{ marginTop: 24, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.border }}>
+              <Text style={[styles.fieldLabel, { color: colors.textPrimary, fontWeight: '800' }]}>
+                CAPTURE APP INGRESS
+              </Text>
+              <Text style={[styles.infoText, { color: colors.textMuted }]}>
+                Always-on thought logging: floating "+" bubble overlay, lockscreen dialog, and system share target.
+              </Text>
+
+              <TouchableOpacity
+                testID="toggle-bubble-btn"
+                style={[
+                  styles.saveBtn,
+                  {
+                    marginTop: 8,
+                    borderColor: isBubbleActive ? '#10B981' : colors.borderStrong,
+                    backgroundColor: isBubbleActive ? 'rgba(16, 185, 129, 0.15)' : colors.background,
+                  },
+                ]}
+                onPress={handleToggleBubble}
+              >
+                <Text
+                  style={[
+                    styles.saveBtnText,
+                    { color: isBubbleActive ? '#10B981' : colors.textPrimary },
+                  ]}
+                >
+                  {isBubbleActive ? '● FLOATING BUBBLE ACTIVE (TAP TO STOP)' : '○ START FLOATING + BUBBLE OVERLAY'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Lingo Compression & Shorthand Table */}
+            <View style={{ marginTop: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.border }}>
+              <Text style={[styles.fieldLabel, { color: colors.textPrimary, fontWeight: '800' }]}>
+                LINGO SHORTHAND RULES
+              </Text>
+              <Text style={[styles.infoText, { color: colors.textMuted }]}>
+                Configure quick expansions (e.g. d=dahi lena, c=call $, buy=buy $).
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    color: colors.textPrimary,
+                    backgroundColor: colors.background,
+                    borderColor: colors.border,
+                    height: 100,
+                    textAlignVertical: 'top',
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                  },
+                ]}
+                value={lingoInput}
+                onChangeText={setLingoInput}
+                multiline
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                <TouchableOpacity
+                  style={[
+                    styles.saveBtn,
+                    {
+                      flex: 1,
+                      borderColor: colors.borderStrong,
+                      backgroundColor: colors.surfaceSubtle || colors.background,
+                    },
+                  ]}
+                  onPress={handleSaveLingo}
+                >
+                  <Text style={[styles.saveBtnText, { color: colors.textPrimary }]}>Save Lingo</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.saveBtn,
+                    {
+                      flex: 1,
+                      borderColor: colors.border,
+                      backgroundColor: colors.background,
+                    },
+                  ]}
+                  onPress={handleResetLingo}
+                >
+                  <Text style={[styles.saveBtnText, { color: colors.textMuted }]}>Reset Default</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </ScrollView>
         </View>
       </View>

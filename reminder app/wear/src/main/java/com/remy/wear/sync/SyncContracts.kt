@@ -36,7 +36,8 @@ object SyncContracts {
         val createdAt: Long,
         val updatedAt: Long,
         val completedAt: Long? = null,
-        val isDeleted: Boolean = false
+        val isDeleted: Boolean = false,
+        val armed: Boolean = true
     ) {
         fun toEntity(syncStatus: String = ReminderEntity.SYNC_STATUS_SYNCED): ReminderEntity =
             ReminderEntity(
@@ -52,7 +53,8 @@ object SyncContracts {
                 completedAt = completedAt,
                 notificationId = null,
                 isDeleted = isDeleted,
-                syncStatus = syncStatus
+                syncStatus = syncStatus,
+                armed = armed
             )
 
         fun toJson(): JSONObject = JSONObject().apply {
@@ -67,6 +69,7 @@ object SyncContracts {
             put("updatedAt", updatedAt)
             put("completedAt", completedAt ?: JSONObject.NULL)
             put("isDeleted", isDeleted)
+            put("armed", armed)
         }
 
         companion object {
@@ -82,7 +85,8 @@ object SyncContracts {
                     createdAt = entity.createdAt,
                     updatedAt = entity.updatedAt,
                     completedAt = entity.completedAt,
-                    isDeleted = entity.isDeleted
+                    isDeleted = entity.isDeleted,
+                    armed = entity.armed
                 )
 
             fun fromJson(json: JSONObject): ReminderSyncDto =
@@ -97,7 +101,8 @@ object SyncContracts {
                     createdAt = json.getLong("createdAt"),
                     updatedAt = json.getLong("updatedAt"),
                     completedAt = if (json.isNull("completedAt")) null else json.optLong("completedAt"),
-                    isDeleted = json.optBoolean("isDeleted", false)
+                    isDeleted = json.optBoolean("isDeleted", false),
+                    armed = json.optBoolean("armed", true)
                 )
         }
     }

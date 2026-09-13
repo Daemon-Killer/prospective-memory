@@ -9,7 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { Reminder } from '../types/reminder';
+import { Reminder, isReminderArmed } from '../types/reminder';
 import { ThemeColors } from '../types/theme';
 import {
   formatTabularReminderTime,
@@ -41,12 +41,16 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
 
   const panX = useRef(new Animated.Value(0)).current;
   const isCompleted = reminder.status === 'completed';
+  const armed = isReminderArmed(reminder);
   const { isOverdue, elapsedFormatted } = getOverdueAnalysis(
     reminder.dueDate,
     reminder.status,
-    currentTime
+    currentTime,
+    armed
   );
-  const timeFormatted = formatTabularReminderTime(reminder.dueDate, currentTime);
+  const timeFormatted = armed
+    ? formatTabularReminderTime(reminder.dueDate, currentTime)
+    : 'INBOX';
 
   // PanResponder for horizontal swipe interaction (Right = Snooze, Left = Complete)
   const panResponder = useRef(
@@ -263,7 +267,7 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
               activeOpacity={0.7}
             >
               <Text style={[styles.actionButtonText, { color: themeColors.textPrimary }]}>
-                SNOOZE
+                {armed ? 'SNOOZE' : 'ARM'}
               </Text>
             </TouchableOpacity>
           )}

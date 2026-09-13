@@ -9,7 +9,7 @@ import {
   Pressable,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { Reminder, SnoozePreset } from '../types/reminder';
+import { Reminder, SnoozePreset, isReminderArmed } from '../types/reminder';
 import { ThemeColors } from '../types/theme';
 import {
   calculate15Minutes,
@@ -199,7 +199,7 @@ export const SnoozeModal: React.FC<SnoozeModalProps> = ({
           <View style={styles.headerRow}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.contextTag, { color: colors.textMuted }]}>
-                RESCHEDULE TASK
+                {isReminderArmed(reminder) ? 'RESCHEDULE TASK' : 'ARM WITH A TIME'}
               </Text>
               <Text
                 style={[styles.title, { color: colors.textPrimary }]}
@@ -208,7 +208,9 @@ export const SnoozeModal: React.FC<SnoozeModalProps> = ({
                 {reminder.title}
               </Text>
               <Text style={[styles.currentDueText, { color: colors.accent }]}>
-                DUE: {formatDateTime(new Date(reminder.dueDate))}
+                {isReminderArmed(reminder)
+                  ? `DUE: ${formatDateTime(new Date(reminder.dueDate))}`
+                  : 'INBOX — NO ALARM YET'}
               </Text>
             </View>
             <TouchableOpacity
