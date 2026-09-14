@@ -81,7 +81,7 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
   }
 });
 
-// 6. Global Shortcut Command Handler (Ctrl+Shift+K / Cmd+Shift+K)
+// 6. Global Shortcut Command Handler (Ctrl+Shift+K / Cmd+Shift+K / Alt+Shift+K)
 chrome.commands.onCommand.addListener(async (command) => {
   console.log('[Remy SW] Command received:', command);
   if (command === 'toggle-hud') {
@@ -90,13 +90,22 @@ chrome.commands.onCommand.addListener(async (command) => {
       try {
         await chrome.tabs.sendMessage(activeTab.id, { type: 'TOGGLE_HUD' });
       } catch {
-        // Fallback for restricted pages (chrome://, WebStore): Open side panel
+        // Fallback for restricted pages (chrome://, WebStore, about:addons): Open side panel or tab
         if (chrome.sidePanel && 'open' in chrome.sidePanel) {
           try {
             await (chrome.sidePanel as any).open({ tabId: activeTab.id });
+            return;
           } catch {
             // Ignore
           }
+        }
+
+        // Fallback for Gecko/Firefox/Zen or restricted pages: Open Swiss Void Agenda in tab
+        try {
+          const url = chrome.runtime.getURL('src/sidepanel/sidepanel.html');
+          await chrome.tabs.create({ url });
+        } catch {
+          // Ignore
         }
       }
     }

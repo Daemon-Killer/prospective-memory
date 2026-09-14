@@ -127,7 +127,7 @@ export async function handleNotificationClick(
     await chrome.notifications.clear(notificationId);
   }
 
-  // Open Quick Action HUD in active tab, or open Side Panel as fallback
+  // Open Quick Action HUD in active tab, or open Side Panel / Tab as fallback
   if (typeof chrome !== 'undefined') {
     try {
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -136,7 +136,7 @@ export async function handleNotificationClick(
         return;
       }
     } catch {
-      // Content script may not be available on restricted pages; open side panel
+      // Content script may not be available on restricted pages; open side panel or tab
     }
 
     if (chrome.sidePanel && 'open' in chrome.sidePanel) {
@@ -144,10 +144,21 @@ export async function handleNotificationClick(
         const [window] = await chrome.windows?.getCurrent ? [await chrome.windows.getCurrent()] : [{ id: 1 }];
         if (window?.id) {
           await (chrome.sidePanel as any).open({ windowId: window.id });
+          return;
         }
       } catch {
         // Fallback
       }
+    }
+
+    // Fallback for Firefox/Zen or restricted pages: Open Swiss Void Agenda in tab
+    try {
+      if (chrome.tabs?.create && chrome.runtime?.getURL) {
+        const url = chrome.runtime.getURL('src/sidepanel/sidepanel.html');
+        await chrome.tabs.create({ url });
+      }
+    } catch {
+      // Ignore
     }
   }
 }
