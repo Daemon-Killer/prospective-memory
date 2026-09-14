@@ -14,6 +14,7 @@
     "test:e2e": "node --no-warnings --experimental-strip-types tests/e2e/runner.ts",
     "typecheck": "tsc --noEmit",
     "build:web": "expo export -p web",
+    "build:android": "cd android && gradlew assembleRelease",
     "deploy": "gh-pages -d dist --dotfiles --nojekyll"
   },
   "dependencies": {
