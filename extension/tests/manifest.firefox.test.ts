@@ -39,13 +39,12 @@ describe('Gecko / Firefox & Zen Manifest V3 Specification', () => {
     expect(manifest.permissions).not.toContain('sidePanel');
   });
 
-  it('requests valid Gecko permissions', () => {
+  it('requests valid Gecko permissions and omits commands from permissions', () => {
     const requiredPermissions = [
       'storage',
       'alarms',
       'notifications',
       'contextMenus',
-      'commands',
       'activeTab',
       'scripting',
       'unlimitedStorage',
@@ -53,6 +52,7 @@ describe('Gecko / Firefox & Zen Manifest V3 Specification', () => {
     for (const perm of requiredPermissions) {
       expect(manifest.permissions).toContain(perm);
     }
+    expect(manifest.permissions).not.toContain('commands');
   });
 
   it('declares background scripts array as ES module for Gecko event page', () => {

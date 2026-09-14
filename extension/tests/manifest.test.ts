@@ -50,13 +50,12 @@ describe('Manifest V3 Specification', () => {
     expect(cmd.global).toBe(true);
   });
 
-  it('requests all mandatory permissions', () => {
+  it('requests all mandatory permissions and omits commands from permissions', () => {
     const requiredPermissions = [
       'storage',
       'alarms',
       'notifications',
       'contextMenus',
-      'commands',
       'activeTab',
       'scripting',
       'sidePanel',
@@ -65,6 +64,7 @@ describe('Manifest V3 Specification', () => {
     for (const perm of requiredPermissions) {
       expect(manifest.permissions).toContain(perm);
     }
+    expect(manifest.permissions).not.toContain('commands');
   });
 
   it('declares host permissions for Render prospective memory API', () => {

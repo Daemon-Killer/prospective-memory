@@ -62,7 +62,6 @@
     "alarms",
     "notifications",
     "contextMenus",
-    "commands",
     "activeTab",
     "scripting",
     "unlimitedStorage"
