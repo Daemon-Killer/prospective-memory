@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Remy Agenda</title>
+  <link rel="stylesheet" href="../theme/swissVoid.css">
+  <style>
+    body {
+      width: 100%;
+      height: 100vh;
+      margin: 0;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      background-color: var(--bg-void);
+      color: var(--fg-primary);
+      overflow: hidden;
+      font-family: var(--font-sans);
+      box-sizing: border-box;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-subtle);
+      margin-bottom: 12px;
+      flex-shrink: 0;
+    }
+    .brand-title {
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--fg-primary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .brand-dot {
+      width: 6px;
+      height: 6px;
+      background-color: var(--accent-orange);
+      border-radius: 50%;
+    }
+    .sync-indicator {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--fg-muted);
+      cursor: pointer;
+    }
+    .sync-indicator:hover {
+      color: var(--accent-orange);
+    }
+    .capture-bar {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-subtle);
+      margin-bottom: 12px;
+      flex-shrink: 0;
+    }
+    .capture-input-row {
+      display: flex;
+      gap: 6px;
+    }
+    .capture-input {
+      flex: 1;
+      background: var(--bg-input);
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      padding: 8px 10px;
+      color: var(--fg-primary);
+      font-size: 13px;
+      outline: none;
+    }
+    .capture-input:focus {
+      border-color: var(--border-focus);
+    }
+    .capture-chips {
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+    }
+    .capture-chip {
+      padding: 3px 6px;
+      font-size: 10px;
+      font-family: var(--font-mono);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 3px;
+      color: var(--fg-secondary);
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .capture-chip[data-active="true"] {
+      border-color: var(--accent-orange);
+      background: var(--accent-orange-subtle);
+      color: var(--accent-orange);
+      font-weight: 600;
+    }
+    .agenda-scroll {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding-right: 4px;
+    }
+    .agenda-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .section-header {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      font-family: var(--font-mono);
+      color: var(--fg-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 4px;
+      border-bottom: 1px dashed var(--border-subtle);
+    }
+    .section-header.overdue {
+      color: var(--accent-orange);
+    }
+    .reminder-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      padding: 8px 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      transition: border-color 0.15s ease;
+    }
+    .reminder-card:hover {
+      border-color: var(--border-strong);
+    }
+    .reminder-card.overdue {
+      border-left: 2px solid var(--accent-orange);
+    }
+    .card-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--fg-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-title.completed {
+      text-decoration: line-through;
+      color: var(--fg-muted);
+    }
+    .card-meta {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      color: var(--fg-secondary);
+      margin-top: 2px;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .card-meta.overdue {
+      color: var(--accent-orange);
+    }
+    .card-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .action-btn {
+      background: transparent;
+      border: 1px solid var(--border-subtle);
+      border-radius: 3px;
+      color: var(--fg-secondary);
+      font-size: 10px;
+      padding: 3px 6px;
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      transition: all 0.1s ease;
+    }
+    .action-btn:hover {
+      border-color: var(--fg-primary);
+      color: var(--fg-primary);
+      background: #1f1f1f;
+    }
+    .action-btn.complete:hover {
+      border-color: #00ff66;
+      color: #00ff66;
+      background: rgba(0, 255, 102, 0.1);
+    }
+    .action-btn.snooze:hover {
+      border-color: var(--accent-orange);
+      color: var(--accent-orange);
+      background: var(--accent-orange-subtle);
+    }
+    .empty-state {
+      font-size: 11px;
+      color: var(--fg-muted);
+      font-style: italic;
+      padding: 4px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand-title">
+      <span class="brand-dot"></span> Remy Agenda
+    </div>
+    <div class="sync-indicator" id="sync-status" title="Click to sync">Synced</div>
+  </div>
+
+  <div class="capture-bar">
+    <div class="capture-input-row">
+      <input type="text" id="capture-input" class="capture-input" placeholder="Quick capture..." autocomplete="off" />
+      <button id="capture-btn" class="swiss-btn swiss-btn-primary" style="padding: 6px 10px; font-size: 11px;">Add</button>
+    </div>
+    <div class="capture-chips" id="capture-chips">
+      <span class="capture-chip" data-chip="inbox" data-active="true">Inbox</span>
+      <span class="capture-chip" data-chip="15m" data-active="false">+15m</span>
+      <span class="capture-chip" data-chip="1h" data-active="false">+1h</span>
+      <span class="capture-chip" data-chip="evening" data-active="false">Evening</span>
+      <span class="capture-chip" data-chip="tomorrow_morning" data-active="false">Tomorrow</span>
+    </div>
+  </div>
+
+  <div class="agenda-scroll" id="agenda-scroll">
+    <!-- Rendered dynamically by sidepanel.ts -->
+  </div>
+
+  <script type="module" src="./sidepanel.ts"></script>
+</body>
+</html>

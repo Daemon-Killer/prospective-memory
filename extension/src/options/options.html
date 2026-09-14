@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Remy Settings</title>
+  <link rel="stylesheet" href="../theme/swissVoid.css">
+  <style>
+    body {
+      max-width: 640px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+    .header {
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .section {
+      margin-bottom: 24px;
+    }
+    .label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--fg-primary);
+    }
+    .sublabel {
+      font-size: 11px;
+      color: var(--fg-muted);
+      margin-bottom: 8px;
+    }
+    .actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 24px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 style="font-size: 20px; font-weight: 800; letter-spacing: 1px;">REMY <span class="swiss-badge">SETTINGS</span></h1>
+  </div>
+
+  <div class="section">
+    <label class="label" for="api-url">Backend API URL</label>
+    <div class="sublabel">Prospective Memory API endpoint (including cloud sync)</div>
+    <input type="url" id="api-url" class="swiss-input" value="https://prospective-memory-api.onrender.com" />
+  </div>
+
+  <div class="section">
+    <label class="label" for="auth-token">Sync Auth Token</label>
+    <div class="sublabel">X-PMEM-TOKEN header value</div>
+    <input type="password" id="auth-token" class="swiss-input" value="d/RSkr00A0GEg2uO3kOLkho3GQxut5Dc/hSvnwobfk4=" />
+  </div>
+
+  <div class="section">
+    <label class="label" for="custom-lingo">Custom Lingo Table</label>
+    <div class="sublabel">Shorthand expansion rules (key=value)</div>
+    <textarea id="custom-lingo" class="swiss-input" rows="6" style="resize: vertical;"></textarea>
+  </div>
+
+  <div class="actions">
+    <button id="save-btn" class="swiss-btn swiss-btn-primary">Save Changes</button>
+  </div>
+
+  <script type="module" src="./options.ts"></script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Remy Quick Capture</title>
+  <link rel="stylesheet" href="../theme/swissVoid.css">
+  <style>
+    body {
+      width: 360px;
+      padding: 16px;
+      margin: 0;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .title {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--fg-primary);
+    }
+    .capture-box {
+      margin-top: 8px;
+    }
+    .hint {
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--fg-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="title">Remy Capture</span>
+    <span class="swiss-badge">Sub-400ms</span>
+  </div>
+  <div class="capture-box">
+    <input type="text" id="capture-input" class="swiss-input" placeholder="What prospective memory to capture?" autofocus />
+    <div class="hint">
+      <span>Press Enter to save</span>
+      <span>Ctrl+Shift+K anywhere</span>
+    </div>
+  </div>
+  <script type="module" src="./popup.ts"></script>
+</body>
+</html>
