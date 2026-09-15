@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Remy Reminders - Core Domain Types & Schema Invariants
  * Milestone 1 Specification
  */
@@ -69,6 +69,9 @@ export interface Reminder {
    * dueDate stays required for Wear/cloud; unarmed items must not notify or show overdue.
    */
   armed?: boolean;
+
+  /** Optional visual ink / stylus stroke or drawing payload */
+  inkData?: string | null;
 }
 
 /** Legacy reminders omit `armed`; treat them as scheduled. */
@@ -77,10 +80,12 @@ export function isReminderArmed(reminder: { armed?: boolean }): boolean {
 }
 
 export interface CreateReminderInput {
+  id?: string;
   title: string;
   notes?: string | null;
   dueDate: string;
   armed?: boolean;
+  inkData?: string | null;
 }
 
 export interface UpdateReminderInput {
@@ -89,6 +94,7 @@ export interface UpdateReminderInput {
   dueDate?: string;
   status?: ReminderStatus;
   armed?: boolean;
+  inkData?: string | null;
 }
 
 export interface SnoozeReminderOptions {

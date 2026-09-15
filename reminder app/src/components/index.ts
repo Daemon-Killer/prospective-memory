@@ -6,3 +6,4 @@ export * from './ReminderList';
 export * from './SnoozeModal';
 export * from './EmptyState';
 export * from './CloudSyncModal';
+export * from './DrawingCanvasModal';

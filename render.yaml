@@ -1,12 +1,20 @@
-﻿services:
+services:
   - type: web
     name: prospective-memory-api
     env: docker
-    plan: free
+    plan: starter
     region: oregon
     dockerfilePath: ./Dockerfile
+    disk:
+      name: pmem-data
+      mountPath: /var/data/pmem
+      sizeGB: 1
     envVars:
       - key: PORT
         value: 8080
       - key: PMEM_TOKEN
         generateValue: true
+      - key: PERSISTENT_DATA_DIR
+        value: /var/data/pmem
+      - key: DATABASE_URL
+        sync: false

@@ -24,11 +24,39 @@ class Settings(BaseSettings):
     database_url: str = ""
 
     def ensure(self) -> None:
-        if self.is_hosted() and not self.resolved_database_url():
-            hosted = Path("/tmp/pmem-data")
-            hosted.mkdir(parents=True, exist_ok=True)
-            self.data_dir = hosted
-            self.db_path = hosted / "tasks.db"
+        if not self.resolved_database_url():
+            persistent_env = os.environ.get("PERSISTENT_DATA_DIR") or os.environ.get("PMEM_DATA_DIR")
+            if persistent_env:
+                p = Path(persistent_env)
+                p.mkdir(parents=True, exist_ok=True)
+                self.data_dir = p
+                self.db_path = p / "tasks.db"
+            elif self.is_hosted():
+                # Check for permanent volume mounts before falling back to ephemeral /tmp
+                persistent_candidates = [
+                    "/var/data/pmem",
+                    "/var/data",
+                    "/data/pmem",
+                    "/data",
+                ]
+                chosen_path: Path | None = None
+                for cand in persistent_candidates:
+                    p = Path(cand)
+                    try:
+                        p.mkdir(parents=True, exist_ok=True)
+                        chosen_path = p
+                        break
+                    except (PermissionError, OSError):
+                        continue
+
+                if chosen_path is not None:
+                    self.data_dir = chosen_path
+                    self.db_path = chosen_path / "tasks.db"
+                else:
+                    hosted = Path("/tmp/pmem-data")
+                    hosted.mkdir(parents=True, exist_ok=True)
+                    self.data_dir = hosted
+                    self.db_path = hosted / "tasks.db"
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -40,12 +68,18 @@ class Settings(BaseSettings):
             return 8790
 
     def resolved_database_url(self) -> str:
-        return (
+        url = (
             self.database_url
             or os.environ.get("DATABASE_URL")
             or os.environ.get("DATABASE_PRIVATE_URL")
+            or os.environ.get("SUPABASE_DB_URL")
+            or os.environ.get("POSTGRES_URL")
+            or os.environ.get("PMEM_DATABASE_URL")
             or ""
         ).strip()
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://"):]
+        return url
 
     def resolved_api_url(self) -> str:
         return (self.api_url or os.environ.get("PMEM_API_URL") or "").strip().rstrip("/")

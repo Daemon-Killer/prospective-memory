@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -7,6 +7,7 @@ import {
   PanResponder,
   Animated,
   Platform,
+  Modal,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Reminder, isReminderArmed } from '../types/reminder';
@@ -16,6 +17,7 @@ import {
   getOverdueAnalysis,
 } from '../utils/dateFormatting';
 import { useTheme } from '../theme/ThemeContext';
+import { deserializeStrokes, pointsToSvgPath } from './DrawingCanvasModal';
 
 export interface ReminderCardProps {
   reminder: Reminder;
@@ -38,6 +40,12 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
 }) => {
   const theme = useTheme();
   const themeColors = propColors ?? theme.colors;
+
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const inkDetails = useMemo(() => {
+    if (!reminder.inkData) return null;
+    return deserializeStrokes(reminder.inkData);
+  }, [reminder.inkData]);
 
   const panX = useRef(new Animated.Value(0)).current;
   const isCompleted = reminder.status === 'completed';
@@ -235,6 +243,50 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
                 {reminder.notes}
               </Text>
             ) : null}
+
+            {reminder.inkData && inkDetails ? (
+              <TouchableOpacity
+                testID={`reminder-ink-preview-${reminder.id}`}
+                onPress={() => setViewerVisible(true)}
+                style={[
+                  styles.inkPreviewContainer,
+                  { borderColor: themeColors.border, backgroundColor: '#0D0D0D' },
+                ]}
+                activeOpacity={0.8}
+                accessibilityLabel="View attached drawing"
+              >
+                <View style={styles.inkThumbnailRow}>
+                  <Text style={styles.inkBadgeText}>✍ INK ATTACHMENT</Text>
+                  <Text style={styles.inkTapHint}>TAP TO VIEW</Text>
+                </View>
+                <View style={styles.inkThumbnailCanvas}>
+                  {Platform.OS === 'web' ? (
+                    <svg
+                      viewBox={`0 0 ${inkDetails.width} ${inkDetails.height}`}
+                      style={{ width: '100%', height: 60 }}
+                    >
+                      {inkDetails.strokes.map((s, idx) => (
+                        <path
+                          key={`th-${idx}`}
+                          d={pointsToSvgPath(s.points)}
+                          stroke={s.color}
+                          strokeWidth={Math.max(s.width * 0.8, 1.5)}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          fill="none"
+                        />
+                      ))}
+                    </svg>
+                  ) : (
+                    <View style={{ height: 40, justifyContent: 'center', alignItems: 'center' }}>
+                      <Text style={[styles.inkFallbackText, { color: themeColors.textSecondary }]}>
+                        {`[Stylus Drawing · ${inkDetails.strokes.length} strokes]`}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
 
@@ -295,6 +347,101 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
           </TouchableOpacity>
         </View>
       </View>
+
+      {reminder.inkData && inkDetails && (
+        <Modal
+          visible={viewerVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setViewerVisible(false)}
+          testID={`reminder-ink-viewer-${reminder.id}`}
+        >
+          <View style={styles.viewerOverlay}>
+            <View style={styles.viewerContainer}>
+              <View style={styles.viewerHeader}>
+                <Text style={styles.viewerTitle}>{reminder.title.toUpperCase()}</Text>
+                <TouchableOpacity
+                  onPress={() => setViewerVisible(false)}
+                  style={styles.viewerCloseBtn}
+                  testID={`reminder-ink-close-${reminder.id}`}
+                  accessibilityLabel="Close drawing viewer"
+                >
+                  <Text style={styles.viewerCloseBtnText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.viewerCanvasBox}>
+                {Platform.OS === 'web' ? (
+                  <svg
+                    viewBox={`0 0 ${inkDetails.width} ${inkDetails.height}`}
+                    style={{ width: '100%', height: '100%' }}
+                  >
+                    {inkDetails.strokes.map((s, idx) => (
+                      <path
+                        key={`full-${idx}`}
+                        d={pointsToSvgPath(s.points)}
+                        stroke={s.color}
+                        strokeWidth={s.width}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        fill="none"
+                      />
+                    ))}
+                  </svg>
+                ) : (
+                  <View style={StyleSheet.absoluteFill}>
+                    {inkDetails.strokes.map((stroke, sIdx) => {
+                      if (stroke.points.length === 1) {
+                        const pt = stroke.points[0];
+                        return (
+                          <View
+                            key={`v-s-${sIdx}-dot`}
+                            style={{
+                              position: 'absolute',
+                              left: pt.x - stroke.width / 2,
+                              top: pt.y - stroke.width / 2,
+                              width: stroke.width,
+                              height: stroke.width,
+                              borderRadius: stroke.width / 2,
+                              backgroundColor: stroke.color,
+                            }}
+                          />
+                        );
+                      }
+                      return stroke.points.map((pt, pIdx) => {
+                        if (pIdx === 0) return null;
+                        const prev = stroke.points[pIdx - 1];
+                        const dx = pt.x - prev.x;
+                        const dy = pt.y - prev.y;
+                        const length = Math.sqrt(dx * dx + dy * dy);
+                        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                        return (
+                          <View
+                            key={`v-s-${sIdx}-p-${pIdx}`}
+                            style={{
+                              position: 'absolute',
+                              left: prev.x,
+                              top: prev.y,
+                              width: length,
+                              height: stroke.width,
+                              backgroundColor: stroke.color,
+                              borderRadius: stroke.width / 2,
+                              transformOrigin: '0% 50%',
+                              transform: [{ rotate: `${angle}deg` }],
+                            }}
+                          />
+                        );
+                      });
+                    })}
+                  </View>
+                )}
+              </View>
+              <Text style={{ marginTop: 8, fontSize: 10, color: '#888888', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }}>
+                {`Vector strokes: ${inkDetails.strokes.length} · Swiss Void Canvas`}
+              </Text>
+            </View>
+          </View>
+        </Modal>
+      )}
     </Animated.View>
   );
 };
@@ -406,6 +553,85 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 1.2,
+  },
+  inkPreviewContainer: {
+    marginTop: 8,
+    borderWidth: 1,
+    padding: 8,
+  },
+  inkThumbnailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  inkBadgeText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#80CBC4',
+    letterSpacing: 1,
+  },
+  inkTapHint: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 8,
+    color: '#666666',
+    letterSpacing: 0.5,
+  },
+  inkThumbnailCanvas: {
+    width: '100%',
+    height: 60,
+    backgroundColor: '#050505',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  inkFallbackText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 10,
+  },
+  viewerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  viewerContainer: {
+    width: '100%',
+    maxWidth: 520,
+    backgroundColor: '#000000',
+    borderWidth: 1,
+    borderColor: '#333333',
+    padding: 16,
+  },
+  viewerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  viewerTitle: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 1.5,
+  },
+  viewerCloseBtn: {
+    padding: 4,
+  },
+  viewerCloseBtnText: {
+    fontSize: 18,
+    color: '#888888',
+  },
+  viewerCanvasBox: {
+    width: '100%',
+    height: 320,
+    backgroundColor: '#0A0A0A',
+    borderWidth: 1,
+    borderColor: '#222222',
+    overflow: 'hidden',
   },
 });
 

@@ -127,6 +127,9 @@ function renderSection(
     } else {
       meta.textContent = '📥 Inbox';
     }
+    if (item.inkData) {
+      meta.textContent += ' · ✎ Ink';
+    }
     info.appendChild(meta);
     card.appendChild(info);
 

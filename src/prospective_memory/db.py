@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS reminders (
     updated_at TEXT NOT NULL,
     completed_at TEXT,
     is_deleted INTEGER NOT NULL DEFAULT 0,
-    armed INTEGER NOT NULL DEFAULT 1
+    armed INTEGER NOT NULL DEFAULT 1,
+    ink_data TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status, due_date ASC);
 CREATE INDEX IF NOT EXISTS idx_reminders_updated ON reminders(updated_at DESC);
@@ -111,7 +112,8 @@ CREATE TABLE IF NOT EXISTS reminders (
     updated_at TEXT NOT NULL,
     completed_at TEXT,
     is_deleted INTEGER NOT NULL DEFAULT 0,
-    armed INTEGER NOT NULL DEFAULT 1
+    armed INTEGER NOT NULL DEFAULT 1,
+    ink_data TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status, due_date ASC);
 CREATE INDEX IF NOT EXISTS idx_reminders_updated ON reminders(updated_at DESC);
@@ -127,7 +129,10 @@ def _pg_connect():
     from psycopg.rows import dict_row
 
     url = settings.resolved_database_url()
-    conn = psycopg.connect(url, row_factory=dict_row, autocommit=False)
+    kwargs: dict[str, Any] = {}
+    if "sslmode" not in url and any(host in url for host in ("supabase", "render", "neon", "aws", "pooler")):
+        kwargs["sslmode"] = "require"
+    conn = psycopg.connect(url, row_factory=dict_row, autocommit=False, **kwargs)
     return conn
 
 
@@ -135,8 +140,8 @@ _PG_BOOTSTRAP = [s.strip() for s in PG_SCHEMA.split(";") if s.strip()]
 _REMINDER_UPSERT_SQL = """
 INSERT INTO reminders (
     id, title, notes, due_date, status, snooze_count, last_snoozed_at,
-    created_at, updated_at, completed_at, is_deleted, armed
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    created_at, updated_at, completed_at, is_deleted, armed, ink_data
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     title = EXCLUDED.title,
     notes = EXCLUDED.notes,
@@ -147,22 +152,29 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = EXCLUDED.updated_at,
     completed_at = EXCLUDED.completed_at,
     is_deleted = EXCLUDED.is_deleted,
-    armed = EXCLUDED.armed
+    armed = EXCLUDED.armed,
+    ink_data = EXCLUDED.ink_data
 WHERE EXCLUDED.updated_at >= reminders.updated_at
 """
 
 
-def _migrate_reminders_armed(conn: Any, db_path: Path | None) -> None:
+def _migrate_reminders_columns(conn: Any, db_path: Path | None) -> None:
     if _use_pg() and db_path is None:
         cur = conn.cursor()
         cur.execute(
             "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS armed INTEGER NOT NULL DEFAULT 1"
+        )
+        cur.execute(
+            "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS ink_data TEXT"
         )
         conn.commit()
         return
     cols = {row[1] for row in conn.execute("PRAGMA table_info(reminders)").fetchall()}
     if "armed" not in cols:
         conn.execute("ALTER TABLE reminders ADD COLUMN armed INTEGER NOT NULL DEFAULT 1")
+        conn.commit()
+    if "ink_data" not in cols:
+        conn.execute("ALTER TABLE reminders ADD COLUMN ink_data TEXT")
         conn.commit()
 
 
@@ -173,7 +185,7 @@ def connect(db_path: Path | None = None):
             for stmt in _PG_BOOTSTRAP:
                 cur.execute(stmt)
         conn.commit()
-        _migrate_reminders_armed(conn, db_path)
+        _migrate_reminders_columns(conn, db_path)
         return conn
     settings.ensure()
     path = (db_path or settings.db_path).expanduser().resolve()
@@ -183,7 +195,7 @@ def connect(db_path: Path | None = None):
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.executescript(SQLITE_SCHEMA)
     conn.commit()
-    _migrate_reminders_armed(conn, db_path)
+    _migrate_reminders_columns(conn, db_path)
     return conn
 
 
@@ -375,6 +387,7 @@ def capture(text: str, source: str = "api", db_path: Path | None = None) -> Task
                 None,
                 0,
                 is_armed,
+                None,
             ),
             db_path,
         )
@@ -735,6 +748,7 @@ def _reminder_params(rem: ReminderIn) -> tuple[Any, ...]:
         rem.completedAt,
         1 if rem.isDeleted else 0,
         1 if rem.armed else 0,
+        rem.inkData,
     )
 
 
@@ -752,6 +766,7 @@ def _reminder_row(r: Any) -> ReminderOut:
         completedAt=_get(r, "completed_at"),
         isDeleted=bool(_get(r, "is_deleted")),
         armed=_as_armed(r),
+        inkData=_get(r, "ink_data"),
     )
 
 

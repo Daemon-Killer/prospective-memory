@@ -21,6 +21,7 @@ import {
   getStoredLingo,
 } from '../utils/captureCompiler';
 import { useTheme } from '../theme/ThemeContext';
+import { DrawingCanvasModal } from './DrawingCanvasModal';
 
 export type QuickChipPreset = CaptureChip;
 
@@ -44,6 +45,7 @@ export interface QuickCaptureBarProps {
     dueDate: Date;
     preset?: CapturePreset;
     armed?: boolean;
+    inkData?: string | null;
   }) => Promise<void> | void;
   themeColors?: ThemeColors;
   defaultPreset?: QuickChipPreset;
@@ -75,6 +77,7 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
   const [text, setText] = useState('');
   const [selectedChip, setSelectedChip] = useState<QuickChipPreset>(defaultPreset);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [inkModalVisible, setInkModalVisible] = useState(false);
   const [lingoTable, setLingoTable] = useState<string>(DEFAULT_LINGO);
   const isSubmittingRef = useRef(false);
 
@@ -226,6 +229,29 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
             maxLength={10000}
           />
           <TouchableOpacity
+            testID="quick-capture-ink-btn"
+            onPress={() => {
+              if (Platform.OS !== 'web') {
+                try {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                } catch {}
+              }
+              setInkModalVisible(true);
+            }}
+            style={[
+              styles.inkButton,
+              {
+                borderColor: themeColors.border,
+                backgroundColor: themeColors.surfaceSubtle,
+                height: text.includes('\n') ? 72 : 44,
+              },
+            ]}
+            activeOpacity={0.7}
+            accessibilityLabel="Open Ink Canvas"
+          >
+            <Text style={[styles.inkButtonText, { color: themeColors.textPrimary }]}>✎</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             testID="quick-capture-submit"
             onPress={handleCapture}
             disabled={!canSubmit}
@@ -275,6 +301,14 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
           </Text>
         ) : null}
       </View>
+      <DrawingCanvasModal
+        visible={inkModalVisible}
+        onClose={() => setInkModalVisible(false)}
+        onSave={async (payload) => {
+          await onCreateReminder(payload);
+        }}
+        themeColors={themeColors}
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -324,6 +358,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderRadius: 0,
+  },
+  inkButton: {
+    width: 44,
+    height: 44,
+    borderWidth: 1,
+    borderRadius: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inkButtonText: {
+    fontSize: 16,
   },
   submitButtonText: {
     fontSize: 12,

@@ -429,4 +429,86 @@ def test_fastmcp_time_inference(tmp_path: Path, monkeypatch) -> None:
     assert due_dt > datetime.now(timezone.utc)
 
 
+def test_ink_data_sync_roundtrip(tmp_path: Path, monkeypatch) -> None:
+    db = tmp_path / "ink_test.db"
+    monkeypatch.setattr(settings, "db_path", db)
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    client = TestClient(app)
+
+    # 1. Upsert reminder with inkData
+    sample_ink = '{"strokes":[[{"x":10,"y":20,"t":100},{"x":15,"y":25,"t":120}]]}'
+    rem_ink = ReminderIn(
+        id="ink-rem-1",
+        title="Circuit Diagram Sketch",
+        notes="Bridge rectifier layout",
+        dueDate="2026-09-15T22:00:00.000Z",
+        status="pending",
+        createdAt="2026-09-15T20:00:00.000Z",
+        updatedAt="2026-09-15T20:00:00.000Z",
+        inkData=sample_ink,
+    )
+    saved = upsert_reminder(rem_ink, db_path=db)
+    assert saved.id == "ink-rem-1"
+    assert saved.inkData == sample_ink
+
+    # 2. Verify list_reminders retains inkData
+    listed = list_reminders(db_path=db)
+    found = next(r for r in listed if r.id == "ink-rem-1")
+    assert found.inkData == sample_ink
+
+    # 3. Verify batch sync endpoint preserves inkData
+    sync_resp = client.post(
+        "/v1/reminders/sync",
+        headers={"X-PMEM-TOKEN": settings.resolved_token()},
+        json={
+            "reminders": [
+                {
+                    "id": "ink-rem-2",
+                    "title": "Stylus Signature",
+                    "dueDate": "2026-09-15T23:00:00.000Z",
+                    "createdAt": "2026-09-15T20:30:00.000Z",
+                    "updatedAt": "2026-09-15T20:30:00.000Z",
+                    "inkData": "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
+                }
+            ]
+        },
+    )
+    assert sync_resp.status_code == 200
+    synced_items = sync_resp.json()["synced"]
+    synced_ink = next(r for r in synced_items if r["id"] == "ink-rem-2")
+    assert synced_ink["inkData"] == "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="
+
+
+def test_permanent_database_config_resolution(tmp_path: Path, monkeypatch) -> None:
+    # 1. Test postgres:// normalization to postgresql://
+    monkeypatch.setenv("DATABASE_URL", "postgres://user:pass@ep-cool-pooler.supabase.co:5432/postgres")
+    assert settings.resolved_database_url() == "postgresql://user:pass@ep-cool-pooler.supabase.co:5432/postgres"
+
+    # 2. Test SUPABASE_DB_URL detection
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("SUPABASE_DB_URL", "postgresql://supabase_admin:secret@db.project.supabase.co:5432/postgres")
+    assert settings.resolved_database_url() == "postgresql://supabase_admin:secret@db.project.supabase.co:5432/postgres"
+
+    # 3. Test persistent volume directory selection when hosted
+    monkeypatch.delenv("SUPABASE_DB_URL", raising=False)
+    monkeypatch.setattr(settings, "database_url", "")
+    monkeypatch.setenv("RENDER", "true")
+    persistent_dir = tmp_path / "persistent_pmem"
+    monkeypatch.setenv("PERSISTENT_DATA_DIR", str(persistent_dir))
+
+    settings.ensure()
+    assert settings.data_dir == persistent_dir
+    assert settings.db_path == persistent_dir / "tasks.db"
+    assert persistent_dir.exists()
+
+    # 4. Test persistent volume directory selection when unhosted
+    monkeypatch.delenv("RENDER", raising=False)
+    unhosted_dir = tmp_path / "unhosted_pmem"
+    monkeypatch.setenv("PERSISTENT_DATA_DIR", str(unhosted_dir))
+    settings.ensure()
+    assert settings.data_dir == unhosted_dir
+    assert settings.db_path == unhosted_dir / "tasks.db"
+    assert unhosted_dir.exists()
+
+
 

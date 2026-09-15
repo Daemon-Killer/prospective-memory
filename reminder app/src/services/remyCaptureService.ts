@@ -7,6 +7,7 @@ export interface PendingCaptureItem {
   armed: boolean;
   createdAt?: string;
   status?: string;
+  inkData?: string | null;
 }
 
 export interface IRemyCaptureService {

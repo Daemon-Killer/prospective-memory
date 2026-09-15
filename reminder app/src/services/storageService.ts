@@ -165,6 +165,7 @@ export class StorageService implements IReminderRepository {
                 notificationId: item.notificationId !== undefined && item.notificationId !== null ? String(item.notificationId) : null,
                 ...(item.isDeleted ? { isDeleted: true } : {}),
                 ...(armed !== undefined ? { armed } : {}),
+                ...(item.inkData ? { inkData: item.inkData } : {}),
               };
 
               // Non-destructive: Only insert disk record if key is not already populated in memory
@@ -286,7 +287,16 @@ export class StorageService implements IReminderRepository {
     }
 
     const now = new Date().toISOString();
-    const id = createUUID();
+    const id = input.id && typeof input.id === 'string' && input.id.trim().length > 0
+      ? input.id.trim()
+      : createUUID();
+
+    if (this.cache.has(id)) {
+      const existing = this.cache.get(id)!;
+      if (!existing.isDeleted) {
+        return { ...existing };
+      }
+    }
 
     const reminder: Reminder = {
       id,
@@ -301,6 +311,7 @@ export class StorageService implements IReminderRepository {
       completedAt: null,
       notificationId: null,
       armed: input.armed !== false,
+      ...(input.inkData ? { inkData: input.inkData } : {}),
     };
 
     // Optimistic cache update & immediate UI notification
@@ -380,7 +391,12 @@ export class StorageService implements IReminderRepository {
       completedAt,
       updatedAt: now,
       ...(armed !== undefined ? { armed } : {}),
+      ...(updates.inkData ? { inkData: updates.inkData } : {}),
     };
+
+    if (updates.inkData === null || updates.inkData === '') {
+      delete updated.inkData;
+    }
 
     this.cache.set(id, updated);
     this.notifyListeners();
@@ -648,6 +664,13 @@ export class StorageService implements IReminderRepository {
           : existing?.armed !== undefined
             ? { armed: existing.armed }
             : {}),
+        ...(item.inkData
+          ? { inkData: item.inkData }
+          : item.inkData === null
+            ? {}
+            : existing?.inkData
+              ? { inkData: existing.inkData }
+              : {}),
       });
       changed = true;
     }

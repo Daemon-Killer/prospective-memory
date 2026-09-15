@@ -76,17 +76,17 @@ class QuickCaptureActivity : Activity() {
         val rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.parseColor("#B3000000"))
-            setPadding(32, 32, 32, 32)
+            setBackgroundColor(Color.parseColor("#E6000000"))
+            setPadding(24, 24, 24, 24)
             setOnClickListener { finish() }
         }
 
         val cardLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 28, 28, 28)
+            setPadding(24, 24, 24, 24)
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#121212"))
-                setStroke(3, Color.parseColor("#333333"))
+                setColor(Color.parseColor("#000000"))
+                setStroke(2, Color.parseColor("#262626"))
                 cornerRadius = 0f
             }
             layoutParams = LinearLayout.LayoutParams(
@@ -205,7 +205,22 @@ class QuickCaptureActivity : Activity() {
         // Button Row
         val buttonRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val writeInsteadBtn = Button(this).apply {
+            text = "WRITE INSTEAD"
+            textSize = 10f
+            setTextColor(Color.parseColor("#80CBC4"))
+            setBackgroundColor(Color.TRANSPARENT)
+            setOnClickListener {
+                startActivity(Intent(this@QuickCaptureActivity, InkCaptureActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                })
+                finish()
+            }
+        }
+        val buttonSpacer = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
         }
         val cancelBtn = Button(this).apply {
             text = "DISMISS"
@@ -225,6 +240,8 @@ class QuickCaptureActivity : Activity() {
             setPadding(28, 12, 28, 12)
             setOnClickListener { submitCapture() }
         }
+        buttonRow.addView(writeInsteadBtn)
+        buttonRow.addView(buttonSpacer)
         buttonRow.addView(cancelBtn)
         buttonRow.addView(captureBtn)
 
@@ -423,7 +440,7 @@ class QuickCaptureActivity : Activity() {
             for (line in titlesToCapture) {
                 val title = expandLingoCustom(line)
                 val (dueDateIso, isArmed) = calculateDueDate(selectedPreset, line, now)
-                val reminderId = UUID.randomUUID().toString().take(16)
+                val reminderId = UUID.randomUUID().toString()
                 queuePendingCapture(reminderId, title, dueDateIso, nowIso, isArmed)
                 postToUnifiedBackend(reminderId, title, dueDateIso, nowIso, isArmed)
             }

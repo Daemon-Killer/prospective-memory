@@ -81,6 +81,7 @@ class ReminderIn(BaseModel):
     completedAt: str | None = Field(default=None, max_length=64)
     isDeleted: bool = False
     armed: bool = True
+    inkData: str | None = None
 
 
 class ReminderOut(BaseModel):
@@ -96,6 +97,7 @@ class ReminderOut(BaseModel):
     completedAt: str | None = None
     isDeleted: bool = False
     armed: bool = True
+    inkData: str | None = None
 
 
 class ReminderSyncBatchIn(BaseModel):

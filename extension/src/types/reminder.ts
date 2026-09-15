@@ -44,6 +44,9 @@ export interface Reminder {
 
   /** False = inbox dump with no alarm. Missing/true = scheduled alarm */
   armed?: boolean;
+
+  /** Optional visual ink / stylus stroke or drawing payload */
+  inkData?: string | null;
 }
 
 export function isReminderArmed(reminder: { armed?: boolean }): boolean {
@@ -55,6 +58,7 @@ export interface CreateReminderInput {
   notes?: string | null;
   dueDate?: string;
   armed?: boolean;
+  inkData?: string | null;
 }
 
 export interface UserConfig {

@@ -1,3 +1,4 @@
 <resources>
   <string name="app_name">Remy Reminders</string>
+  <string name="widget_desc">Lockscreen &amp; Home Quick Thought Capture</string>
 </resources>

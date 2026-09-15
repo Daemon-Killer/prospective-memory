@@ -25,10 +25,12 @@ import { CapturePreset, compileMultiLineCapture, getStoredLingo } from '../utils
 export interface HomeScreenProps {
   reminders?: Reminder[];
   onCreateReminder?: (input: {
+    id?: string;
     title: string;
     dueDate: Date;
     preset?: CapturePreset;
     armed?: boolean;
+    inkData?: string | null;
   }) => Promise<void> | void;
   onToggleComplete?: (id: string) => Promise<void> | void;
   onSnoozeReminder?: (reminder: Reminder) => void;
@@ -174,18 +176,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const handleCreateReminder = useCallback(
     async (input: {
+      id?: string;
       title: string;
       dueDate: Date;
       preset?: CapturePreset;
       armed?: boolean;
+      inkData?: string | null;
     }) => {
       if (propOnCreate) {
         await propOnCreate(input);
       } else {
         await remindersHook.createReminder({
+          id: input.id,
           title: input.title,
           dueDate: input.dueDate.toISOString(),
           armed: input.armed,
+          inkData: input.inkData,
         });
       }
     },
@@ -235,9 +241,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         if (pending && pending.length > 0 && isMounted) {
           for (const item of pending) {
             await handleCreateReminder({
+              id: item.id,
               title: item.title,
               dueDate: new Date(item.dueDate),
               armed: item.armed,
+              inkData: item.inkData,
             });
           }
           await remyCaptureService.clearPendingCaptures();
