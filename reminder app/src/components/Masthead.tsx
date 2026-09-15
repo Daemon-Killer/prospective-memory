@@ -15,6 +15,8 @@ export interface MastheadProps {
   themeColors?: ThemeColors;
   themeMode?: ThemeMode;
   onCycleTheme?: () => void;
+  onOpenDealsRadar?: () => void;
+  voucherCount?: number;
   testID?: string;
 }
 
@@ -26,6 +28,8 @@ export const Masthead: React.FC<MastheadProps> = ({
   themeColors: propColors,
   themeMode: propMode,
   onCycleTheme: propCycleTheme,
+  onOpenDealsRadar,
+  voucherCount = 0,
   testID = 'masthead',
 }) => {
   const theme = useTheme();
@@ -78,6 +82,25 @@ export const Masthead: React.FC<MastheadProps> = ({
           REMY // PROSPECTIVE MEMORY
         </Text>
         <View style={styles.utilityActions}>
+          {onOpenDealsRadar && (
+            <TouchableOpacity
+              testID="deals-radar-btn"
+              style={[
+                styles.cloudBtn,
+                { borderColor: themeColors.border, backgroundColor: themeColors.surface },
+              ]}
+              onPress={onOpenDealsRadar}
+              accessibilityLabel="Open Deals & Voucher Radar"
+            >
+              <View
+                style={[
+                  styles.cloudDot,
+                  { backgroundColor: voucherCount > 0 ? themeColors.accent : '#6B7280' },
+                ]}
+              />
+              <Text style={[styles.cloudText, { color: themeColors.textMuted }]}>RADAR</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             testID="cloud-sync-btn"
             style={[

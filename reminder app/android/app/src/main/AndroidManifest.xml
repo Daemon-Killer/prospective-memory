@@ -54,5 +54,14 @@
           android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
           android:value="Always-available quick thought capture overlay"/>
     </service>
+    <service
+        android:name=".sensory.RemyNotificationListenerService"
+        android:label="Remy Notification Sensory Service"
+        android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="android.service.notification.NotificationListenerService" />
+      </intent-filter>
+    </service>
   </application>
 </manifest>

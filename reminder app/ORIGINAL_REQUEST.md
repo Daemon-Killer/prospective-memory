@@ -121,3 +121,49 @@ Implement the outbound synchronization pipeline bridging the local Room SQLite d
 ### Code Quality & Build Verification
 - [ ] Automated tests for outbound sync pass 100% (gradlew.bat test).
 - [ ] The entire Wear OS companion APK compiles cleanly (gradlew.bat assembleDebug).
+
+## 2026-09-14T14:44:30Z
+
+Build the Remy Android Notification Sensory Engine: a low-latency, privacy-preserving notification listener with on-device intent classification that parses incoming system alerts into actionable prospective memory to-dos and a dedicated Deals & Voucher Radar, managed via a calm review queue.
+
+Working directory: c:\Users\bda99\Desktop\prospective-memory\reminder app
+Integrity mode: development
+
+## Requirements
+
+### R1. Native Android Notification Listener & App Whitelisting
+Implement a background Android notification listener service that captures incoming system status-bar notifications. Provide an on-device configurable whitelist/blacklist to control which apps are monitored, strictly quarantining or redacting sensitive authentication codes (OTPs, passwords) so they are never leaked or stored as general reminders.
+
+### R2. Dual-Stream On-Device Intent Classifier
+Implement an on-device rule and pattern classification engine (operating in <30ms with zero required cloud calls) that classifies incoming notifications into three discrete streams:
+1. **Actionable To-Do**: Extracts action verbs, commitment context, inferred deadlines, and delivery milestones (e.g., courier out for delivery, utility bill due dates, flight check-in).
+2. **Deal / Voucher Radar**: Identifies promotional offers, extracting merchant name, promo code (e.g., `SAVE50`, `SWIGGYIT`), discount value, and expiration date.
+3. **Noise**: Silently discards conversational chatter, social reactions, and non-actionable status messages.
+
+### R3. Suggested Review Queue (Sensory Inbox)
+Implement a non-intrusive "Incoming Suggestions" shelf in the Remy user interface adhering to Swiss Void design:
+- Candidate to-dos wait in this queue without polluting the active prospective agenda.
+- 1-tap **[Accept]** promotes the candidate into the active reminder ledger with its parsed time cue and tags.
+- 1-tap **[Dismiss]** permanently purges the suggestion.
+
+### R4. Dedicated Deals & Voucher Radar View
+Implement a dedicated Deals & Vouchers view/tab in the application:
+- Lists active, non-expired merchant discount vouchers.
+- Features 1-tap copy of the promo code to clipboard with visual feedback.
+- Automatically flags or purges expired vouchers based on parsed expiry dates.
+
+## Acceptance Criteria
+
+### Classification & Parsing Suite
+- [ ] Automated test suite verifies at least 15 diverse notification test cases spanning food delivery, e-commerce, banking bills, transport, promo coupons, and chat messages with correct 3-way classification (Actionable vs Deal vs Noise).
+- [ ] Promo code extractor reliably captures alphanumeric voucher codes and discount terms across standard notification phrasing.
+- [ ] Financial OTPs and security verification patterns are quarantined and excluded from task suggestions.
+
+### Review Queue & State Transitions
+- [ ] Tapping [Accept] creates a valid reminder in `storageService` with correct title, inferred due date, and armed state.
+- [ ] Tapping [Dismiss] removes the suggestion from storage and UI without creating orphaned records.
+- [ ] Vouchers past their expiration date are hidden or marked expired in the Deals Radar.
+
+### Integration & Monorepo Stability
+- [ ] All existing 396 tests in `reminder app` continue to pass without regression.
+- [ ] New components compile cleanly without TypeScript or React Native bundling errors.

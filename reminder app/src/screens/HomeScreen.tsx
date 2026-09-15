@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { StyleSheet, View, AppState } from 'react-native';
+import { StyleSheet, View, AppState, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
@@ -8,7 +8,14 @@ import { useReminders } from '../hooks/useReminders';
 import { useNotifications } from '../hooks/useNotifications';
 import { remyCaptureService } from '../services/remyCaptureService';
 import { cloudSyncService } from '../services/cloudSyncService';
+import { sensoryStorageService } from '../sensory/sensoryStorageService';
+import { dealsStorageService } from '../sensory/dealsStorageService';
+import { sensoryBridge } from '../sensory/sensoryBridge';
+import { intentClassifier } from '../sensory/intentClassifier';
+import { SensorySuggestion, VoucherItem } from '../sensory/types';
 import { Masthead } from '../components/Masthead';
+import { SensoryInboxShelf } from '../components/SensoryInboxShelf';
+import { DealsRadarScreen } from './DealsRadarScreen';
 import { ReminderList } from '../components/ReminderList';
 import { QuickCaptureBar } from '../components/QuickCaptureBar';
 import { SnoozeModal } from '../components/SnoozeModal';
@@ -28,6 +35,11 @@ export interface HomeScreenProps {
   onDeleteReminder?: (id: string) => Promise<void> | void;
   onRefresh?: () => Promise<void>;
   isRefreshing?: boolean;
+  suggestions?: SensorySuggestion[];
+  onAcceptSuggestion?: (id: string) => Promise<void> | void;
+  onDismissSuggestion?: (id: string) => Promise<void> | void;
+  vouchers?: VoucherItem[];
+  onOpenDealsRadar?: () => void;
   testID?: string;
 }
 
@@ -39,6 +51,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onDeleteReminder: propOnDelete,
   onRefresh: propOnRefresh,
   isRefreshing: propIsRefreshing,
+  suggestions: propSuggestions,
+  onAcceptSuggestion: propOnAcceptSuggestion,
+  onDismissSuggestion: propOnDismissSuggestion,
+  vouchers: propVouchers,
+  onOpenDealsRadar: propOnOpenDealsRadar,
   testID = 'home-screen',
 }) => {
   const { colors, mode, cycleTheme } = useTheme();
@@ -46,6 +63,114 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const [selectedReminderForSnooze, setSelectedReminderForSnooze] = useState<Reminder | null>(null);
   const [snoozeModalVisible, setSnoozeModalVisible] = useState<boolean>(false);
+  const [dealsRadarVisible, setDealsRadarVisible] = useState<boolean>(false);
+
+  const [internalSuggestions, setInternalSuggestions] = useState<SensorySuggestion[]>(() =>
+    sensoryStorageService.getPendingSuggestions()
+  );
+  const [internalVouchers, setInternalVouchers] = useState<VoucherItem[]>(() =>
+    dealsStorageService.getVouchers()
+  );
+
+  const suggestions = propSuggestions ?? internalSuggestions;
+  const vouchers = propVouchers ?? internalVouchers;
+
+  // Initialize and subscribe to sensory and deals storage
+  useEffect(() => {
+    let isMounted = true;
+    sensoryStorageService.init().then(() => {
+      if (isMounted) {
+        setInternalSuggestions(sensoryStorageService.getPendingSuggestions());
+      }
+    });
+    dealsStorageService.init().then(() => {
+      if (isMounted) {
+        setInternalVouchers(dealsStorageService.getVouchers());
+      }
+    });
+
+    const unsubSensory = sensoryStorageService.subscribe(() => {
+      if (isMounted) {
+        setInternalSuggestions(sensoryStorageService.getPendingSuggestions());
+      }
+    });
+    const unsubDeals = dealsStorageService.subscribe(() => {
+      if (isMounted) {
+        setInternalVouchers(dealsStorageService.getVouchers());
+      }
+    });
+
+    // Wire live incoming notification routing from sensoryBridge
+    const routeNotification = async (payload: any) => {
+      try {
+        const result = intentClassifier.classify(payload);
+        if (result.stream === 'actionable' && result.actionable) {
+          await sensoryStorageService.addFromExtraction(result.actionable, payload);
+        } else if (result.stream === 'deal' && result.deal) {
+          await dealsStorageService.addFromExtraction(result.deal, payload);
+        }
+      } catch (err) {
+        console.warn('HomeScreen: Error routing live sensory notification:', err);
+      }
+    };
+
+    const unsubBridge = sensoryBridge.onNotification((payload) => {
+      routeNotification(payload);
+    });
+
+    return () => {
+      isMounted = false;
+      unsubSensory();
+      unsubDeals();
+      unsubBridge();
+    };
+  }, []);
+
+  const drainSensoryQueue = useCallback(async () => {
+    try {
+      const pending = await sensoryBridge.drainPendingNotifications();
+      for (const payload of pending) {
+        const result = intentClassifier.classify(payload);
+        if (result.stream === 'actionable' && result.actionable) {
+          await sensoryStorageService.addFromExtraction(result.actionable, payload);
+        } else if (result.stream === 'deal' && result.deal) {
+          await dealsStorageService.addFromExtraction(result.deal, payload);
+        }
+      }
+    } catch (err) {
+      console.warn('HomeScreen: Error draining sensory notifications:', err);
+    }
+  }, []);
+
+  const handleAcceptSuggestion = useCallback(
+    async (id: string) => {
+      if (propOnAcceptSuggestion) {
+        await propOnAcceptSuggestion(id);
+      } else {
+        await sensoryStorageService.acceptSuggestion(id);
+      }
+    },
+    [propOnAcceptSuggestion]
+  );
+
+  const handleDismissSuggestion = useCallback(
+    async (id: string) => {
+      if (propOnDismissSuggestion) {
+        await propOnDismissSuggestion(id);
+      } else {
+        await sensoryStorageService.dismissSuggestion(id);
+      }
+    },
+    [propOnDismissSuggestion]
+  );
+
+  const handleOpenRadar = useCallback(() => {
+    if (propOnOpenDealsRadar) {
+      propOnOpenDealsRadar();
+    } else {
+      setDealsRadarVisible(true);
+    }
+  }, [propOnOpenDealsRadar]);
 
   const handleCreateReminder = useCallback(
     async (input: {
@@ -127,6 +252,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active' && isMounted) {
         processIngress();
+        drainSensoryQueue();
       }
     });
 
@@ -185,12 +311,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     } else {
       setInternalRefreshing(true);
       try {
-        await cloudSyncService.syncNow();
+        await Promise.all([
+          cloudSyncService.syncNow(),
+          drainSensoryQueue(),
+        ]);
       } finally {
         setInternalRefreshing(false);
       }
     }
-  }, [propOnRefresh]);
+  }, [propOnRefresh, drainSensoryQueue]);
 
   return (
     <SafeAreaView testID={testID} style={[styles.container, { backgroundColor: colors.background }]}>
@@ -203,6 +332,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           themeColors={colors}
           themeMode={mode}
           onCycleTheme={cycleTheme}
+          onOpenDealsRadar={handleOpenRadar}
+          voucherCount={vouchers.length}
+        />
+
+        <SensoryInboxShelf
+          suggestions={suggestions}
+          onAccept={handleAcceptSuggestion}
+          onDismiss={handleDismissSuggestion}
+          onOpenDealsRadar={handleOpenRadar}
+          themeColors={colors}
         />
 
         <View style={styles.listWrapper}>
@@ -229,6 +368,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           onSnooze={handleConfirmSnooze}
           themeColors={colors}
         />
+
+        <Modal
+          visible={dealsRadarVisible}
+          animationType="slide"
+          onRequestClose={() => setDealsRadarVisible(false)}
+        >
+          <DealsRadarScreen
+            vouchers={vouchers}
+            onCopyVoucher={async (id) => {
+              await dealsStorageService.recordCopy(id);
+            }}
+            onPurgeExpired={async () => {
+              await dealsStorageService.purgeExpired();
+            }}
+            onBack={() => setDealsRadarVisible(false)}
+            onClose={() => setDealsRadarVisible(false)}
+            themeColors={colors}
+          />
+        </Modal>
       </View>
     </SafeAreaView>
   );
