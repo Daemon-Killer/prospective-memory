@@ -137,11 +137,31 @@ def serve_cmd(
 
 
 @app.command("serve-mcp")
-def serve_mcp_cmd() -> None:
-    from prospective_memory.mcp_server import run_stdio
+def serve_mcp_cmd(
+    transport: str = typer.Option("stdio", "--transport", "-t", help="Transport mode: stdio or sse"),
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host for SSE transport"),
+    port: int = typer.Option(8001, "--port", "-p", help="Port for SSE transport"),
+) -> None:
+    """Run the FastMCP server for Claude Desktop, Cursor, Grok, and Gemini."""
+    from prospective_memory.mcp_server import run_stdio, run_sse
 
     settings.ensure()
-    run_stdio()
+    if transport.lower() == "sse":
+        console.print(f"[green]FastMCP SSE[/green] listening on http://{host}:{port}/sse")
+        run_sse(host=host, port=port)
+    else:
+        run_stdio()
+
+
+@app.command("watchlist")
+def watchlist_cmd(
+    media_type: Optional[str] = typer.Option(None, "--type", "-t", help="movie, show, book, documentary"),
+    platform: Optional[str] = typer.Option(None, "--platform", "-p", help="Streaming platform filter"),
+) -> None:
+    """List cultural recommendations in the leisure ledger."""
+    from prospective_memory.mcp_server import list_cultural_items
+    payload = list_cultural_items(media_type=media_type, platform=platform)
+    console.print_json(json.dumps(payload, default=str))
 
 
 if __name__ == "__main__":

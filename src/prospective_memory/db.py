@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS reminders (
     completed_at TEXT,
     is_deleted INTEGER NOT NULL DEFAULT 0,
     armed INTEGER NOT NULL DEFAULT 1,
-    ink_data TEXT
+    ink_data TEXT,
+    cultural_metadata TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status, due_date ASC);
 CREATE INDEX IF NOT EXISTS idx_reminders_updated ON reminders(updated_at DESC);
@@ -113,7 +114,8 @@ CREATE TABLE IF NOT EXISTS reminders (
     completed_at TEXT,
     is_deleted INTEGER NOT NULL DEFAULT 0,
     armed INTEGER NOT NULL DEFAULT 1,
-    ink_data TEXT
+    ink_data TEXT,
+    cultural_metadata TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status, due_date ASC);
 CREATE INDEX IF NOT EXISTS idx_reminders_updated ON reminders(updated_at DESC);
@@ -140,8 +142,8 @@ _PG_BOOTSTRAP = [s.strip() for s in PG_SCHEMA.split(";") if s.strip()]
 _REMINDER_UPSERT_SQL = """
 INSERT INTO reminders (
     id, title, notes, due_date, status, snooze_count, last_snoozed_at,
-    created_at, updated_at, completed_at, is_deleted, armed, ink_data
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    created_at, updated_at, completed_at, is_deleted, armed, ink_data, cultural_metadata
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     title = EXCLUDED.title,
     notes = EXCLUDED.notes,
@@ -153,7 +155,8 @@ ON CONFLICT (id) DO UPDATE SET
     completed_at = EXCLUDED.completed_at,
     is_deleted = EXCLUDED.is_deleted,
     armed = EXCLUDED.armed,
-    ink_data = EXCLUDED.ink_data
+    ink_data = EXCLUDED.ink_data,
+    cultural_metadata = EXCLUDED.cultural_metadata
 WHERE EXCLUDED.updated_at >= reminders.updated_at
 """
 
@@ -167,6 +170,9 @@ def _migrate_reminders_columns(conn: Any, db_path: Path | None) -> None:
         cur.execute(
             "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS ink_data TEXT"
         )
+        cur.execute(
+            "ALTER TABLE reminders ADD COLUMN IF NOT EXISTS cultural_metadata TEXT"
+        )
         conn.commit()
         return
     cols = {row[1] for row in conn.execute("PRAGMA table_info(reminders)").fetchall()}
@@ -175,6 +181,9 @@ def _migrate_reminders_columns(conn: Any, db_path: Path | None) -> None:
         conn.commit()
     if "ink_data" not in cols:
         conn.execute("ALTER TABLE reminders ADD COLUMN ink_data TEXT")
+        conn.commit()
+    if "cultural_metadata" not in cols:
+        conn.execute("ALTER TABLE reminders ADD COLUMN cultural_metadata TEXT")
         conn.commit()
 
 
@@ -288,7 +297,9 @@ def _mirror_reminder_to_task(conn: Any, rem: ReminderIn, db_path: Path | None = 
     trigger_type = TriggerType.TIME.value if rem.armed else TriggerType.NONE.value
     trigger_detail = rem.dueDate if rem.armed else ""
     category = "inbox"
-    if rem.notes and rem.notes.startswith("category:"):
+    if rem.culturalMetadata:
+        category = "watchlist"
+    elif rem.notes and rem.notes.startswith("category:"):
         category = rem.notes.split(":", 1)[1].strip() or "inbox"
     else:
         try:
@@ -387,6 +398,7 @@ def capture(text: str, source: str = "api", db_path: Path | None = None) -> Task
                 None,
                 0,
                 is_armed,
+                None,
                 None,
             ),
             db_path,
@@ -749,6 +761,7 @@ def _reminder_params(rem: ReminderIn) -> tuple[Any, ...]:
         1 if rem.isDeleted else 0,
         1 if rem.armed else 0,
         rem.inkData,
+        rem.culturalMetadata,
     )
 
 
@@ -767,6 +780,7 @@ def _reminder_row(r: Any) -> ReminderOut:
         isDeleted=bool(_get(r, "is_deleted")),
         armed=_as_armed(r),
         inkData=_get(r, "ink_data"),
+        culturalMetadata=_get(r, "cultural_metadata"),
     )
 
 

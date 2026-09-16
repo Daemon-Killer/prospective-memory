@@ -166,6 +166,7 @@ export class StorageService implements IReminderRepository {
                 ...(item.isDeleted ? { isDeleted: true } : {}),
                 ...(armed !== undefined ? { armed } : {}),
                 ...(item.inkData ? { inkData: item.inkData } : {}),
+                ...(item.culturalMetadata ? { culturalMetadata: item.culturalMetadata } : {}),
               };
 
               // Non-destructive: Only insert disk record if key is not already populated in memory
@@ -312,6 +313,7 @@ export class StorageService implements IReminderRepository {
       notificationId: null,
       armed: input.armed !== false,
       ...(input.inkData ? { inkData: input.inkData } : {}),
+      ...(input.culturalMetadata ? { culturalMetadata: input.culturalMetadata } : {}),
     };
 
     // Optimistic cache update & immediate UI notification
@@ -392,10 +394,18 @@ export class StorageService implements IReminderRepository {
       updatedAt: now,
       ...(armed !== undefined ? { armed } : {}),
       ...(updates.inkData ? { inkData: updates.inkData } : {}),
+      ...(updates.culturalMetadata !== undefined
+        ? (updates.culturalMetadata ? { culturalMetadata: updates.culturalMetadata } : {})
+        : existing.culturalMetadata
+        ? { culturalMetadata: existing.culturalMetadata }
+        : {}),
     };
 
     if (updates.inkData === null || updates.inkData === '') {
       delete updated.inkData;
+    }
+    if (updates.culturalMetadata === null) {
+      delete updated.culturalMetadata;
     }
 
     this.cache.set(id, updated);
@@ -670,6 +680,24 @@ export class StorageService implements IReminderRepository {
             ? {}
             : existing?.inkData
               ? { inkData: existing.inkData }
+              : {}),
+        ...(item.culturalMetadata
+          ? {
+              culturalMetadata:
+                typeof item.culturalMetadata === 'string'
+                  ? (() => {
+                      try {
+                        return JSON.parse(item.culturalMetadata);
+                      } catch {
+                        return null;
+                      }
+                    })()
+                  : item.culturalMetadata,
+            }
+          : item.culturalMetadata === null
+            ? {}
+            : existing?.culturalMetadata
+              ? { culturalMetadata: existing.culturalMetadata }
               : {}),
       });
       changed = true;

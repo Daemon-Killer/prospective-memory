@@ -21,6 +21,7 @@ from prospective_memory.db import (
     stats,
     upsert_reminder,
 )
+from prospective_memory.mcp_server import mcp
 from prospective_memory.models import (
     CaptureIn,
     CaptureOut,
@@ -156,6 +157,9 @@ def create_app() -> FastAPI:
         if not rem:
             raise HTTPException(404, "not found")
         return rem
+
+    # Mount FastMCP SSE Starlette application for Claude Desktop, Cursor, and LLM SSE tool calling
+    app.mount("/mcp", mcp.sse_app(mount_path="/mcp"))
 
     return app
 

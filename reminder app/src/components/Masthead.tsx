@@ -17,6 +17,10 @@ export interface MastheadProps {
   onCycleTheme?: () => void;
   onOpenDealsRadar?: () => void;
   voucherCount?: number;
+  onOpenWatchlist?: () => void;
+  watchlistCount?: number;
+  onOpenBubbleSettings?: () => void;
+  isBubbleActive?: boolean;
   testID?: string;
 }
 
@@ -30,6 +34,10 @@ export const Masthead: React.FC<MastheadProps> = ({
   onCycleTheme: propCycleTheme,
   onOpenDealsRadar,
   voucherCount = 0,
+  onOpenWatchlist,
+  watchlistCount = 0,
+  onOpenBubbleSettings,
+  isBubbleActive = false,
   testID = 'masthead',
 }) => {
   const theme = useTheme();
@@ -99,6 +107,44 @@ export const Masthead: React.FC<MastheadProps> = ({
                 ]}
               />
               <Text style={[styles.cloudText, { color: themeColors.textMuted }]}>RADAR</Text>
+            </TouchableOpacity>
+          )}
+          {onOpenWatchlist && (
+            <TouchableOpacity
+              testID="watchlist-btn"
+              style={[
+                styles.cloudBtn,
+                { borderColor: themeColors.border, backgroundColor: themeColors.surface },
+              ]}
+              onPress={onOpenWatchlist}
+              accessibilityLabel="Open Cultural Watchlist"
+            >
+              <View
+                style={[
+                  styles.cloudDot,
+                  { backgroundColor: watchlistCount > 0 ? '#38BDF8' : '#6B7280' },
+                ]}
+              />
+              <Text style={[styles.cloudText, { color: themeColors.textMuted }]}>WATCH</Text>
+            </TouchableOpacity>
+          )}
+          {onOpenBubbleSettings && (
+            <TouchableOpacity
+              testID="bubble-settings-btn"
+              style={[
+                styles.cloudBtn,
+                { borderColor: themeColors.border, backgroundColor: themeColors.surface },
+              ]}
+              onPress={onOpenBubbleSettings}
+              accessibilityLabel="Floating Bubble Overlay Settings"
+            >
+              <View
+                style={[
+                  styles.cloudDot,
+                  { backgroundColor: isBubbleActive ? '#10B981' : '#6B7280' },
+                ]}
+              />
+              <Text style={[styles.cloudText, { color: themeColors.textMuted }]}>BUBBLE</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity

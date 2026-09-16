@@ -82,6 +82,7 @@ class ReminderIn(BaseModel):
     isDeleted: bool = False
     armed: bool = True
     inkData: str | None = None
+    culturalMetadata: str | None = None
 
 
 class ReminderOut(BaseModel):
@@ -98,6 +99,7 @@ class ReminderOut(BaseModel):
     isDeleted: bool = False
     armed: bool = True
     inkData: str | None = None
+    culturalMetadata: str | None = None
 
 
 class ReminderSyncBatchIn(BaseModel):

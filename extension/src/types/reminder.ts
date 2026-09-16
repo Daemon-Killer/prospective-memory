@@ -47,6 +47,21 @@ export interface Reminder {
 
   /** Optional visual ink / stylus stroke or drawing payload */
   inkData?: string | null;
+
+  /** Optional cultural / leisure recommendation metadata (movies, shows, books, docs) */
+  culturalMetadata?: CulturalMetadata | null;
+}
+
+export type CulturalMediaType = 'movie' | 'show' | 'documentary' | 'book' | 'other';
+
+export interface CulturalMetadata {
+  mediaType: CulturalMediaType;
+  platform?: string | null;
+  releaseYear?: number | null;
+  runtime?: string | null;
+  genres?: string[];
+  recommendedBy?: string | null;
+  creator?: string | null;
 }
 
 export function isReminderArmed(reminder: { armed?: boolean }): boolean {
@@ -59,6 +74,7 @@ export interface CreateReminderInput {
   dueDate?: string;
   armed?: boolean;
   inkData?: string | null;
+  culturalMetadata?: CulturalMetadata | null;
 }
 
 export interface UserConfig {

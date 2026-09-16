@@ -11,14 +11,17 @@ from prospective_memory.models import TaskStatus
 mcp = FastMCP(
     "prospective-memory",
     instructions=(
-        "Phone-first personal inbox + JARVIS pull. "
+        "Phone-first personal inbox + JARVIS pull + Cultural Watchlist. "
         "Tasks: list_open_tasks / search_tasks / capture_task. "
+        "Reminders & Culture: list_reminders / create_reminder / capture_cultural_item / list_cultural_items. "
         "Phone life: latest_otp (codes expire in ~3 minutes; if redacted, Android hid the digits — tell them to look at the phone), "
         "last_whatsapp (notification previews, not full chat history), "
         "missed_summary (what arrived recently). "
         "The phone owns OTPs, WhatsApp, mail alerts. This is pull-only. Never invent an OTP."
     ),
 )
+# Disable DNS rebinding protection so SSE transport works across localhost, LAN, and proxies
+mcp.settings.transport_security.enable_dns_rebinding_protection = False
 
 
 def _remote() -> bool:
@@ -168,6 +171,7 @@ def create_reminder(
     due_date: str | None = None,
     armed: bool = True,
     notes: str | None = None,
+    cultural_metadata: str | None = None,
 ) -> dict[str, Any]:
     """Create a new reminder in the unified ledger. If armed=false, creates an unarmed inbox item."""
     from datetime import datetime, timezone, timedelta
@@ -204,6 +208,7 @@ def create_reminder(
             "createdAt": now_iso,
             "updatedAt": now_iso,
             "armed": armed,
+            "culturalMetadata": cultural_metadata,
         }
         return remote.upsert_reminder(payload)
     from prospective_memory.db import upsert_reminder
@@ -219,9 +224,127 @@ def create_reminder(
         createdAt=now_iso,
         updatedAt=now_iso,
         armed=armed,
+        culturalMetadata=cultural_metadata,
     )
     saved = upsert_reminder(rem)
     return saved.model_dump(mode="json")
+
+
+@mcp.tool()
+def capture_cultural_item(
+    title: str,
+    media_type: str = "movie",
+    platform: str | None = None,
+    release_year: int | None = None,
+    runtime: str | None = None,
+    genres: list[str] | None = None,
+    notes: str | None = None,
+    recommended_by: str | None = None,
+    creator: str | None = None,
+) -> dict[str, Any]:
+    """Capture a cultural or leisure recommendation (movie, show, documentary, book) into the ledger."""
+    import json
+    from datetime import datetime, timezone
+    from uuid import uuid4
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    rem_id = uuid4().hex[:16]
+
+    meta_dict = {
+        "mediaType": media_type.lower() if media_type else "movie",
+        "platform": platform,
+        "releaseYear": release_year,
+        "runtime": runtime,
+        "genres": genres or [],
+        "recommendedBy": recommended_by,
+        "creator": creator,
+    }
+    meta_json = json.dumps(meta_dict)
+
+    if _remote():
+        from prospective_memory import remote
+
+        payload = {
+            "id": rem_id,
+            "title": title,
+            "notes": notes,
+            "dueDate": now_iso,
+            "status": "pending",
+            "snoozeCount": 0,
+            "createdAt": now_iso,
+            "updatedAt": now_iso,
+            "armed": False,
+            "culturalMetadata": meta_json,
+        }
+        return remote.upsert_reminder(payload)
+    from prospective_memory.db import upsert_reminder
+    from prospective_memory.models import ReminderIn
+
+    rem = ReminderIn(
+        id=rem_id,
+        title=title,
+        notes=notes,
+        dueDate=now_iso,
+        status="pending",
+        snoozeCount=0,
+        createdAt=now_iso,
+        updatedAt=now_iso,
+        armed=False,
+        culturalMetadata=meta_json,
+    )
+    saved = upsert_reminder(rem)
+    return saved.model_dump(mode="json")
+
+
+@mcp.tool()
+def list_cultural_items(
+    media_type: str | None = None,
+    platform: str | None = None,
+    genre: str | None = None,
+    query: str | None = None,
+    status: str | None = "pending",
+    limit: int = 50,
+) -> dict[str, Any]:
+    """List movie and cultural recommendations queued in the leisure ledger."""
+    import json
+    if _remote():
+        from prospective_memory import remote
+        items = remote.list_reminders(status=status)
+    else:
+        from prospective_memory.db import list_reminders as _list_rem
+        items = [r.model_dump(mode="json") for r in _list_rem(status=status)]
+
+    cultural_items = []
+    for item in items:
+        meta_raw = item.get("culturalMetadata")
+        if not meta_raw:
+            continue
+        try:
+            meta = json.loads(meta_raw) if isinstance(meta_raw, str) else meta_raw
+        except Exception:
+            continue
+        if media_type and meta.get("mediaType", "").lower() != media_type.lower():
+            continue
+        if platform and meta.get("platform", "").lower() != platform.lower():
+            continue
+        if genre:
+            item_genres = [g.lower() for g in meta.get("genres", [])]
+            if genre.lower() not in item_genres:
+                continue
+        if query:
+            q = query.lower()
+            title_match = q in item.get("title", "").lower()
+            notes_match = q in str(item.get("notes", "")).lower()
+            creator_match = q in str(meta.get("creator", "")).lower()
+            if not (title_match or notes_match or creator_match):
+                continue
+        item_copy = dict(item)
+        item_copy["parsedMetadata"] = meta
+        cultural_items.append(item_copy)
+        if len(cultural_items) >= limit:
+            break
+
+    return {"total": len(cultural_items), "items": cultural_items}
 
 
 @mcp.tool()
@@ -265,8 +388,62 @@ def complete_reminder(reminder_id: str) -> dict[str, Any]:
     return updated.model_dump(mode="json")
 
 
+@mcp.prompt()
+def weekend_watchlist_prompt(genre: str = "") -> str:
+    """Prompt for curating recommendations from the user's weekend cultural watchlist."""
+    genre_text = f" focusing on the '{genre}' genre" if genre else ""
+    return (
+        f"Review the user's cultural watchlist{genre_text} using the `list_cultural_items` tool. "
+        "Recommend 2-3 optimal options for a weekend viewing/reading session. "
+        "For each option, explain why it fits well, list its platform and runtime, and propose a Friday/Saturday evening schedule."
+    )
+
+
+@mcp.prompt()
+def triage_inbox_prompt() -> str:
+    """Prompt for triaging unarmed thoughts, tasks, and overdue reminders."""
+    return (
+        "Retrieve open tasks with `list_open_tasks` and pending reminders with `list_reminders(status='pending')`. "
+        "Identify items that lack time cues or are overdue. "
+        "Ask the user for each item whether to arm it with a specific due date, snooze it, or drop it."
+    )
+
+
+@mcp.resource("ledger://reminders")
+def reminders_resource() -> str:
+    """Resource returning active reminders as JSON."""
+    import json
+    if _remote():
+        from prospective_memory import remote
+        items = remote.list_reminders(status="pending")
+    else:
+        from prospective_memory.db import list_reminders as _list_rem
+        items = [r.model_dump(mode="json") for r in _list_rem(status="pending")]
+    return json.dumps(items, indent=2)
+
+
+@mcp.resource("ledger://watchlist")
+def watchlist_resource() -> str:
+    """Resource returning queued watchlist and cultural items as JSON."""
+    import json
+    return json.dumps(list_cultural_items(limit=100), indent=2)
+
+
+@mcp.resource("ledger://stats")
+def stats_resource() -> str:
+    """Resource returning system and ledger statistics as JSON."""
+    import json
+    return json.dumps(task_stats(), indent=2)
+
+
 def run_stdio() -> None:
     mcp.run(transport="stdio")
+
+
+def run_sse(host: str = "127.0.0.1", port: int = 8001) -> None:
+    mcp.settings.host = host
+    mcp.settings.port = port
+    mcp.run(transport="sse")
 
 
 if __name__ == "__main__":

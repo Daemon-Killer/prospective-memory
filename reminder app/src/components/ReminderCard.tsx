@@ -18,6 +18,7 @@ import {
 } from '../utils/dateFormatting';
 import { useTheme } from '../theme/ThemeContext';
 import { deserializeStrokes, pointsToSvgPath } from './DrawingCanvasModal';
+import { formatCulturalBadge } from '../utils/watchlistParser';
 
 export interface ReminderCardProps {
   reminder: Reminder;
@@ -242,6 +243,19 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
               >
                 {reminder.notes}
               </Text>
+            ) : null}
+
+            {reminder.culturalMetadata ? (
+              <View testID={`reminder-cultural-badge-${reminder.id}`} style={styles.culturalBadgeRow}>
+                <Text style={styles.culturalBadgeText}>
+                  {formatCulturalBadge(reminder.culturalMetadata)}
+                </Text>
+                {reminder.culturalMetadata.genres && reminder.culturalMetadata.genres.length > 0 && (
+                  <Text style={styles.culturalGenreText}>
+                    {reminder.culturalMetadata.genres.map((g) => `#${g}`).join(' ')}
+                  </Text>
+                )}
+              </View>
             ) : null}
 
             {reminder.inkData && inkDetails ? (
@@ -632,6 +646,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#222222',
     overflow: 'hidden',
+  },
+  culturalBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+    marginBottom: 2,
+    flexWrap: 'wrap',
+  },
+  culturalBadgeText: {
+    color: '#38BDF8',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1,
+    backgroundColor: '#0C2A38',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: '#0369A1',
+  },
+  culturalGenreText: {
+    color: '#737373',
+    fontSize: 9,
+    fontWeight: '700',
   },
 });
 

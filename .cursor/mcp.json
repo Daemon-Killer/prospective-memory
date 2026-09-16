@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "remy-prospective-memory": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "c:/Users/bda99/Desktop/prospective-memory",
+        "run",
+        "pmem",
+        "serve-mcp"
+      ],
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    },
+    "remy-remote-sse": {
+      "url": "http://127.0.0.1:8000/mcp/sse"
+    }
+  }
+}

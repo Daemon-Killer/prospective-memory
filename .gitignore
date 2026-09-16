@@ -37,6 +37,7 @@ reminder app/wear/.gradle/
 # Expo Android native project (committed; ignore build outputs and debug signing)
 reminder app/android/app/debug.keystore
 reminder app/android/local.properties
+reminder app/wear/local.properties
 
 .gradle/
 build/

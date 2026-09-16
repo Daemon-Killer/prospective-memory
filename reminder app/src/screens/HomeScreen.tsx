@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { StyleSheet, View, AppState, Modal } from 'react-native';
+import { StyleSheet, View, AppState, Modal, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
@@ -16,11 +16,14 @@ import { SensorySuggestion, VoucherItem } from '../sensory/types';
 import { Masthead } from '../components/Masthead';
 import { SensoryInboxShelf } from '../components/SensoryInboxShelf';
 import { DealsRadarScreen } from './DealsRadarScreen';
+import { WatchlistScreen } from './WatchlistScreen';
 import { ReminderList } from '../components/ReminderList';
 import { QuickCaptureBar } from '../components/QuickCaptureBar';
 import { SnoozeModal } from '../components/SnoozeModal';
-import { Reminder, SnoozePreset } from '../types/reminder';
+import { BubbleSettingsModal } from '../components/BubbleSettingsModal';
+import { Reminder, SnoozePreset, CulturalMetadata } from '../types/reminder';
 import { CapturePreset, compileMultiLineCapture, getStoredLingo } from '../utils/captureCompiler';
+import { getWeekendWatchlistCue } from '../utils/watchlistParser';
 
 export interface HomeScreenProps {
   reminders?: Reminder[];
@@ -31,6 +34,7 @@ export interface HomeScreenProps {
     preset?: CapturePreset;
     armed?: boolean;
     inkData?: string | null;
+    culturalMetadata?: CulturalMetadata | null;
   }) => Promise<void> | void;
   onToggleComplete?: (id: string) => Promise<void> | void;
   onSnoozeReminder?: (reminder: Reminder) => void;
@@ -42,6 +46,9 @@ export interface HomeScreenProps {
   onDismissSuggestion?: (id: string) => Promise<void> | void;
   vouchers?: VoucherItem[];
   onOpenDealsRadar?: () => void;
+  onOpenWatchlist?: () => void;
+  onOpenBubbleSettings?: () => void;
+  currentTime?: Date;
   testID?: string;
 }
 
@@ -58,6 +65,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onDismissSuggestion: propOnDismissSuggestion,
   vouchers: propVouchers,
   onOpenDealsRadar: propOnOpenDealsRadar,
+  onOpenWatchlist: propOnOpenWatchlist,
+  onOpenBubbleSettings: propOnOpenBubbleSettings,
+  currentTime = new Date(),
   testID = 'home-screen',
 }) => {
   const { colors, mode, cycleTheme } = useTheme();
@@ -66,6 +76,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [selectedReminderForSnooze, setSelectedReminderForSnooze] = useState<Reminder | null>(null);
   const [snoozeModalVisible, setSnoozeModalVisible] = useState<boolean>(false);
   const [dealsRadarVisible, setDealsRadarVisible] = useState<boolean>(false);
+  const [watchlistVisible, setWatchlistVisible] = useState<boolean>(false);
+  const [bubbleSettingsVisible, setBubbleSettingsVisible] = useState<boolean>(false);
+  const [isBubbleActive, setIsBubbleActive] = useState<boolean>(false);
 
   const [internalSuggestions, setInternalSuggestions] = useState<SensorySuggestion[]>(() =>
     sensoryStorageService.getPendingSuggestions()
@@ -76,6 +89,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const suggestions = propSuggestions ?? internalSuggestions;
   const vouchers = propVouchers ?? internalVouchers;
+
+  // Check bubble running state on mount
+  useEffect(() => {
+    let isMounted = true;
+    remyCaptureService.isBubbleRunning().then((active) => {
+      if (isMounted) setIsBubbleActive(active);
+    }).catch(() => {});
+    return () => { isMounted = false; };
+  }, []);
 
   // Initialize and subscribe to sensory and deals storage
   useEffect(() => {
@@ -173,6 +195,40 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       setDealsRadarVisible(true);
     }
   }, [propOnOpenDealsRadar]);
+
+  const handleOpenWatchlist = useCallback(() => {
+    if (propOnOpenWatchlist) {
+      propOnOpenWatchlist();
+    } else {
+      setWatchlistVisible(true);
+    }
+  }, [propOnOpenWatchlist]);
+
+  const handleOpenBubbleSettings = useCallback(() => {
+    if (propOnOpenBubbleSettings) {
+      propOnOpenBubbleSettings();
+    } else {
+      setBubbleSettingsVisible(true);
+    }
+  }, [propOnOpenBubbleSettings]);
+
+  const handleCreateCulturalItem = useCallback(
+    async (input: {
+      title: string;
+      notes?: string | null;
+      culturalMetadata: CulturalMetadata;
+      dueDate?: string;
+    }) => {
+      await remindersHook.createReminder({
+        title: input.title,
+        notes: input.notes,
+        dueDate: input.dueDate || new Date().toISOString(),
+        armed: false,
+        culturalMetadata: input.culturalMetadata,
+      });
+    },
+    [remindersHook]
+  );
 
   const handleCreateReminder = useCallback(
     async (input: {
@@ -329,6 +385,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     }
   }, [propOnRefresh, drainSensoryQueue]);
 
+  const culturalCount = reminders.filter((r) => Boolean(r.culturalMetadata)).length;
+  const weekendCue = getWeekendWatchlistCue(reminders, currentTime);
+
   return (
     <SafeAreaView testID={testID} style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={mode === 'light' ? 'dark' : 'light'} />
@@ -342,6 +401,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           onCycleTheme={cycleTheme}
           onOpenDealsRadar={handleOpenRadar}
           voucherCount={vouchers.length}
+          onOpenWatchlist={handleOpenWatchlist}
+          watchlistCount={culturalCount}
+          onOpenBubbleSettings={handleOpenBubbleSettings}
+          isBubbleActive={isBubbleActive}
         />
 
         <SensoryInboxShelf
@@ -351,6 +414,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           onOpenDealsRadar={handleOpenRadar}
           themeColors={colors}
         />
+
+        {/* Contextual Weekend Watchlist Surfacing Banner */}
+        {weekendCue.isWeekendCueActive && (
+          <TouchableOpacity
+            testID="home-weekend-cue-banner"
+            style={styles.weekendCueBanner}
+            onPress={handleOpenWatchlist}
+            activeOpacity={0.8}
+            accessibilityLabel="Open Weekend Watchlist"
+          >
+            <View style={styles.weekendCueHeader}>
+              <Text style={styles.weekendCueTag}>WEEKEND SURFACING</Text>
+              <Text style={styles.weekendCueCount}>{weekendCue.count} READY</Text>
+            </View>
+            <Text style={styles.weekendCueTitle}>WEEKEND WATCHLIST</Text>
+            <Text style={styles.weekendCueSubtext}>{weekendCue.subtext} · TAP TO VIEW</Text>
+          </TouchableOpacity>
+        )}
 
         <View style={styles.listWrapper}>
           <ReminderList
@@ -395,6 +476,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             themeColors={colors}
           />
         </Modal>
+
+        <Modal
+          visible={watchlistVisible}
+          animationType="slide"
+          onRequestClose={() => setWatchlistVisible(false)}
+        >
+          <WatchlistScreen
+            reminders={reminders}
+            onCreateCulturalItem={handleCreateCulturalItem}
+            onToggleComplete={handleToggleComplete}
+            onDeleteReminder={handleDeleteReminder}
+            onSnoozeReminder={async (id, target) => {
+              await remindersHook.snoozeReminder(id, target);
+            }}
+            onBack={() => setWatchlistVisible(false)}
+            onClose={() => setWatchlistVisible(false)}
+            themeColors={colors}
+            currentTime={currentTime}
+          />
+        </Modal>
+
+        <BubbleSettingsModal
+          visible={bubbleSettingsVisible}
+          onClose={() => {
+            setBubbleSettingsVisible(false);
+            remyCaptureService.isBubbleRunning().then(setIsBubbleActive).catch(() => {});
+          }}
+          themeColors={colors}
+        />
       </View>
     </SafeAreaView>
   );
@@ -409,6 +519,44 @@ const styles = StyleSheet.create({
   },
   listWrapper: {
     flex: 1,
+  },
+  weekendCueBanner: {
+    backgroundColor: '#0F172A',
+    borderColor: '#1E293B',
+    borderWidth: 1,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+    padding: 12,
+  },
+  weekendCueHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  weekendCueTag: {
+    color: '#38BDF8',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+  },
+  weekendCueCount: {
+    color: '#38BDF8',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  weekendCueTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  weekendCueSubtext: {
+    color: '#94A3B8',
+    fontSize: 11,
+    marginTop: 2,
   },
 });
 
