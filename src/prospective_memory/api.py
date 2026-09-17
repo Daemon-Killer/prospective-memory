@@ -57,7 +57,37 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health() -> dict:
-        return {"ok": True, "version": APP_VERSION, "jarvis": True}
+        db_status = "untested"
+        db_error = None
+        count = None
+        try:
+            from prospective_memory.db import connect
+            with connect() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT count(*) FROM reminders")
+                res = cur.fetchone()
+                if isinstance(res, (list, tuple)):
+                    count = res[0]
+                elif hasattr(res, "keys"):
+                    count = res[list(res.keys())[0]]
+                elif res is not None:
+                    count = res[0]
+                else:
+                    count = 0
+                db_status = f"connected ({count} reminders)"
+        except Exception as e:
+            db_status = "error"
+            db_error = f"{type(e).__name__}: {str(e)}"
+
+        return {
+            "ok": db_status != "error",
+            "version": APP_VERSION,
+            "commit": "deploy_probe_v1",
+            "db_type": "postgres" if settings.resolved_database_url() else "sqlite",
+            "db_status": db_status,
+            "db_error": db_error,
+            "jarvis": True,
+        }
 
     @app.post("/v1/capture", response_model=CaptureOut, dependencies=[Depends(_check_token)])
     def post_capture(body: CaptureIn) -> CaptureOut:
