@@ -82,7 +82,7 @@ def create_app() -> FastAPI:
         return {
             "ok": db_status != "error",
             "version": APP_VERSION,
-            "commit": "deploy_probe_v1",
+            "commit": "supabase_pooler_v1",
             "db_type": "postgres" if settings.resolved_database_url() else "sqlite",
             "db_status": db_status,
             "db_error": db_error,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import urllib.parse
 from pathlib import Path
@@ -85,6 +86,8 @@ class Settings(BaseSettings):
         if url.startswith("postgresql://"):
             prefix = "postgresql://"
             remainder = url[len(prefix):]
+            userpass = ""
+            hostpart = remainder
             if "@" in remainder:
                 userpass, hostpart = remainder.rsplit("@", 1)
                 if ":" in userpass:
@@ -92,7 +95,24 @@ class Settings(BaseSettings):
                     unquoted = urllib.parse.unquote(password)
                     quoted = urllib.parse.quote(unquoted, safe="")
                     userpass = f"{username}:{quoted}"
-                url = f"{prefix}{userpass}@{hostpart}"
+
+            # If connecting to direct Supabase host db.<ref>.supabase.co, IPv4-only cloud hosts
+            # (such as Render) fail with 'Network is unreachable' because direct hosts are IPv6-only.
+            # Seamlessly translate to the Supabase IPv4 Connection Pooler (Session mode, port 5432).
+            m = re.search(r"db\.([a-z0-9]+)\.supabase\.co(?::\d+)?", hostpart)
+            if m and m.group(1) == "bsbdtacjepxkgpponfcr":
+                ref = m.group(1)
+                region = "ap-northeast-1"
+                pooler_host = f"aws-0-{region}.pooler.supabase.com:5432"
+                if userpass:
+                    u, p = userpass.split(":", 1) if ":" in userpass else (userpass, "")
+                    if u == "postgres":
+                        u = f"postgres.{ref}"
+                    userpass = f"{u}:{p}" if p else u
+                path_and_query = hostpart.split("/", 1)[1] if "/" in hostpart else "postgres"
+                hostpart = f"{pooler_host}/{path_and_query}"
+
+            url = f"{prefix}{userpass}@{hostpart}" if userpass else f"{prefix}{hostpart}"
         return url
 
     def resolved_api_url(self) -> str:
