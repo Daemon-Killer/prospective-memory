@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import urllib.parse
 from pathlib import Path
 
 from pydantic import Field
@@ -77,8 +78,21 @@ class Settings(BaseSettings):
             or os.environ.get("PMEM_DATABASE_URL")
             or ""
         ).strip()
+        if not url:
+            return ""
         if url.startswith("postgres://"):
             url = "postgresql://" + url[len("postgres://"):]
+        if url.startswith("postgresql://"):
+            prefix = "postgresql://"
+            remainder = url[len(prefix):]
+            if "@" in remainder:
+                userpass, hostpart = remainder.rsplit("@", 1)
+                if ":" in userpass:
+                    username, password = userpass.split(":", 1)
+                    unquoted = urllib.parse.unquote(password)
+                    quoted = urllib.parse.quote(unquoted, safe="")
+                    userpass = f"{username}:{quoted}"
+                url = f"{prefix}{userpass}@{hostpart}"
         return url
 
     def resolved_api_url(self) -> str:
