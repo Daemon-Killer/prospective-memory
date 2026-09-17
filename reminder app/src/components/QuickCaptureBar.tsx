@@ -19,6 +19,7 @@ import {
   compileMultiLineCapture,
   DEFAULT_LINGO,
   getStoredLingo,
+  isListOrMultiLine,
 } from '../utils/captureCompiler';
 import { useTheme } from '../theme/ThemeContext';
 import { DrawingCanvasModal } from './DrawingCanvasModal';
@@ -46,6 +47,7 @@ export interface QuickCaptureBarProps {
     preset?: CapturePreset;
     armed?: boolean;
     inkData?: string | null;
+    tags?: string[];
   }) => Promise<void> | void;
   themeColors?: ThemeColors;
   defaultPreset?: QuickChipPreset;
@@ -79,7 +81,22 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [inkModalVisible, setInkModalVisible] = useState(false);
   const [lingoTable, setLingoTable] = useState<string>(DEFAULT_LINGO);
+  const [isListening, setIsListening] = useState<boolean>(false);
+  const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
   const isSubmittingRef = useRef(false);
+  const recognitionRef = useRef<any>(null);
+  const voiceTimerRef = useRef<any>(null);
+  const voiceBaseTextRef = useRef<string>('');
+
+  const showVoiceNotice = (msg: string, duration = 3000) => {
+    if (voiceTimerRef.current) {
+      clearTimeout(voiceTimerRef.current);
+    }
+    setVoiceNotice(msg);
+    voiceTimerRef.current = setTimeout(() => {
+      setVoiceNotice(null);
+    }, duration);
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -92,8 +109,102 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
       .catch(() => {});
     return () => {
       isMounted = false;
+      voiceBaseTextRef.current = '';
+      if (voiceTimerRef.current) {
+        clearTimeout(voiceTimerRef.current);
+      }
+      if (recognitionRef.current) {
+        try {
+          if (typeof recognitionRef.current.abort === 'function') {
+            recognitionRef.current.abort();
+          } else if (typeof recognitionRef.current.stop === 'function') {
+            recognitionRef.current.stop();
+          }
+        } catch {}
+      }
     };
   }, []);
+
+  const handleToggleVoice = () => {
+    if (Platform.OS !== 'web') {
+      try {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      } catch {}
+    }
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
+      setIsListening(false);
+      setVoiceNotice(null);
+      voiceBaseTextRef.current = '';
+      return;
+    }
+
+    const SpeechRec =
+      typeof window !== 'undefined'
+        ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition || null
+        : null;
+
+    if (!SpeechRec) {
+      showVoiceNotice('VOICE INPUT UNAVAILABLE');
+      return;
+    }
+
+    try {
+      voiceBaseTextRef.current = text.trim();
+      const recognition = new SpeechRec();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        setVoiceNotice('● LISTENING... SPEAK NOW');
+      };
+
+      recognition.onresult = (event: any) => {
+        let transcript = '';
+        if (event.results) {
+          for (let i = 0; i < event.results.length; i++) {
+            if (event.results[i][0]?.transcript) {
+              transcript += event.results[i][0].transcript;
+            }
+          }
+        }
+        const cleanedTranscript = transcript.trim();
+        const base = voiceBaseTextRef.current;
+        if (cleanedTranscript) {
+          setText(base ? `${base} ${cleanedTranscript}` : cleanedTranscript);
+        } else if (base) {
+          setText(base);
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        setIsListening(false);
+        voiceBaseTextRef.current = '';
+        const isDenied = event?.error === 'not-allowed';
+        showVoiceNotice(isDenied ? 'MIC PERMISSION DENIED' : 'VOICE INPUT ERROR');
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+        setVoiceNotice(null);
+        voiceBaseTextRef.current = '';
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch {
+      setIsListening(false);
+      voiceBaseTextRef.current = '';
+      showVoiceNotice('VOICE INPUT FAILED');
+    }
+  };
 
   const handleChipSelect = (chipId: QuickChipPreset) => {
     if (Platform.OS !== 'web') {
@@ -130,6 +241,7 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
           dueDate: draft.dueDate,
           preset: draft.preset,
           armed: draft.armed,
+          tags: draft.tags,
         });
       }
 
@@ -145,7 +257,8 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
     () => (text.trim() ? compileMultiLineCapture(text, selectedChip, new Date(), lingoTable) : []),
     [text, selectedChip, lingoTable]
   );
-  const isMultiLine = multiDrafts.length > 1;
+  const isBatchCapture = multiDrafts.length > 1;
+  const isMultiLineLayout = isBatchCapture || text.includes('\n') || isListOrMultiLine(text);
   const singleDraft = multiDrafts[0] || null;
 
   return (
@@ -214,7 +327,7 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
                 color: themeColors.textPrimary,
                 backgroundColor: themeColors.surfaceSubtle,
                 borderColor: themeColors.border,
-                height: text.includes('\n') ? 72 : 44,
+                height: isMultiLineLayout ? 72 : 44,
               },
             ]}
             placeholder={placeholder}
@@ -222,12 +335,37 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
             value={text}
             onChangeText={setText}
             autoFocus={autoFocus}
-            returnKeyType={text.includes('\n') ? 'default' : 'done'}
-            multiline={text.includes('\n')}
-            onSubmitEditing={text.includes('\n') ? undefined : handleCapture}
+            returnKeyType={isMultiLineLayout ? 'default' : 'done'}
+            multiline={isMultiLineLayout}
+            onSubmitEditing={isMultiLineLayout ? undefined : handleCapture}
             editable={!isSubmitting}
             maxLength={10000}
           />
+          <TouchableOpacity
+            testID="quick-capture-mic-btn"
+            onPress={handleToggleVoice}
+            style={[
+              styles.micButton,
+              {
+                borderColor: isListening ? themeColors.accent || '#FF4500' : themeColors.border,
+                backgroundColor: isListening
+                  ? themeColors.accentSubtle || 'rgba(255, 69, 0, 0.15)'
+                  : themeColors.surfaceSubtle,
+                height: isMultiLineLayout ? 72 : 44,
+              },
+            ]}
+            activeOpacity={0.7}
+            accessibilityLabel={isListening ? 'Stop voice recording' : 'Start voice recording'}
+          >
+            <Text
+              style={[
+                styles.micButtonText,
+                { color: isListening ? themeColors.accent || '#FF4500' : themeColors.textPrimary },
+              ]}
+            >
+              {isListening ? '●' : '🎙'}
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity
             testID="quick-capture-ink-btn"
             onPress={() => {
@@ -243,7 +381,7 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
               {
                 borderColor: themeColors.border,
                 backgroundColor: themeColors.surfaceSubtle,
-                height: text.includes('\n') ? 72 : 44,
+                height: isMultiLineLayout ? 72 : 44,
               },
             ]}
             activeOpacity={0.7}
@@ -260,7 +398,7 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
               {
                 backgroundColor: canSubmit ? themeColors.textPrimary : themeColors.surfaceSubtle,
                 borderColor: canSubmit ? themeColors.textPrimary : themeColors.border,
-                height: text.includes('\n') ? 72 : 44,
+                height: isMultiLineLayout ? 72 : 44,
               },
             ]}
             activeOpacity={0.7}
@@ -273,11 +411,34 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
                 },
               ]}
             >
-              {isMultiLine ? `ADD ${multiDrafts.length}` : 'ADD'}
+              {isBatchCapture ? `ADD ${multiDrafts.length}` : 'ADD'}
             </Text>
           </TouchableOpacity>
         </View>
-        {isMultiLine ? (
+        {voiceNotice ? (
+          <View
+            testID="voice-status-banner"
+            style={[
+              styles.voiceBanner,
+              {
+                borderColor: isListening ? themeColors.accent || '#FF4500' : themeColors.border,
+                backgroundColor: isListening
+                  ? themeColors.accentSubtle || 'rgba(255, 69, 0, 0.15)'
+                  : themeColors.surfaceSubtle,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.voiceBannerText,
+                { color: isListening ? themeColors.accent || '#FF4500' : themeColors.textSecondary },
+              ]}
+            >
+              {voiceNotice}
+            </Text>
+          </View>
+        ) : null}
+        {isBatchCapture ? (
           <Text
             testID="capture-preview"
             style={[styles.previewText, { color: themeColors.accent || themeColors.textPrimary }]}
@@ -369,6 +530,31 @@ const styles = StyleSheet.create({
   },
   inkButtonText: {
     fontSize: 16,
+  },
+  micButton: {
+    width: 44,
+    height: 44,
+    borderWidth: 1,
+    borderRadius: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  micButtonText: {
+    fontSize: 16,
+  },
+  voiceBanner: {
+    marginTop: 6,
+    borderWidth: 1,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 0,
+    alignSelf: 'flex-start',
+  },
+  voiceBannerText: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+    fontVariant: ['tabular-nums'],
   },
   submitButtonText: {
     fontSize: 12,

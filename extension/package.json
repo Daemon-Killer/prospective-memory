@@ -8,6 +8,8 @@
     "build": "npm run build:chrome && npm run build:firefox",
     "build:chrome": "tsc --noEmit && vite build --mode chrome",
     "build:firefox": "tsc --noEmit && vite build --mode firefox",
+    "package": "node scripts/package.js",
+    "build:zip": "npm run build && npm run package",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

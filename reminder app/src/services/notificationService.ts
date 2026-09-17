@@ -13,6 +13,7 @@
  */
 
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { Reminder, isReminderArmed } from '../types/reminder';
 import { storageService, IReminderRepository } from './storageService';
@@ -27,6 +28,31 @@ export const ANDROID_CHANNEL_ID = REMINDER_CHANNEL_ID; // alias for backwards co
 export const NOTIFICATION_CATEGORY = 'remy_reminder_actions';
 export const BACKGROUND_NOTIFICATION_TASK = 'BACKGROUND_NOTIFICATION_TASK';
 
+export const WEEKEND_WATCHLIST_NOTIFICATION_ID = 'remy_weekend_watchlist_nudge';
+export const WATCHLIST_STORAGE_KEY = '@remy/watchlist_notification_id';
+
+/**
+ * Calculates upcoming Friday at 7:00 PM (19:00:00).
+ * If today is Friday but already past 19:00, schedules for the next Friday at 19:00.
+ */
+export function calculateNextFriday7PM(now: Date = new Date()): Date {
+  const currentDay = now.getDay();
+  let daysUntilFriday = (5 - currentDay + 7) % 7;
+
+  if (daysUntilFriday === 0) {
+    const today7PM = new Date(now);
+    today7PM.setHours(19, 0, 0, 0);
+    if (now.getTime() >= today7PM.getTime()) {
+      daysUntilFriday = 7;
+    }
+  }
+
+  const target = new Date(now);
+  target.setDate(target.getDate() + daysUntilFriday);
+  target.setHours(19, 0, 0, 0);
+  return target;
+}
+
 // Action Identifiers (canonical prefixed and accepted short forms)
 export const ACTION_COMPLETE = 'remy_action_complete';
 export const ACTION_SNOOZE_15M = 'remy_action_snooze_15m';
@@ -40,6 +66,9 @@ export interface INotificationService {
   cancelReminderNotification(notificationId: string): Promise<void>;
   handleNotificationResponse(actionIdentifier: string, reminderId: string): Promise<void>;
   reconcileActiveReminders(): Promise<{ activeCount: number; rescheduledCount: number; purgedCount: number }>;
+  scheduleWeekendWatchlistNotification(unwatchedCount: number, customDate?: Date, now?: Date): Promise<string | null>;
+  cancelWeekendWatchlistNotification(): Promise<void>;
+  reconcileWeekendWatchlistNotification(reminders: Reminder[], now?: Date): Promise<string | null>;
 }
 
 export class NotificationService implements INotificationService {
@@ -47,6 +76,7 @@ export class NotificationService implements INotificationService {
   private initialized: boolean = false;
   private activeActionLocks: Set<string> = new Set();
   private lastActionTimestamps: Map<string, { action: string; timestamp: number }> = new Map();
+  private watchlistNotificationId: string | null = null;
 
   constructor(repository: IReminderRepository = storageService) {
     this.repository = repository;
@@ -389,10 +419,16 @@ export class NotificationService implements INotificationService {
       }
     }
 
-    // 2. Purge orphaned scheduled notifications
+    // 2. Purge orphaned scheduled notifications (exempting watchlist nudges)
     const activeIdSet = new Set(activeReminders.map((r) => r.id));
     for (const notif of scheduledNotifications) {
       try {
+        if (
+          notif.content?.data?.screen === 'watchlist' ||
+          notif.content?.data?.type === 'watchlist'
+        ) {
+          continue;
+        }
         const rId = notif.content?.data?.reminderId as string | undefined;
         if (!rId || typeof rId !== 'string' || !activeIdSet.has(rId)) {
           await Notifications.cancelScheduledNotificationAsync(notif.identifier);
@@ -403,11 +439,138 @@ export class NotificationService implements INotificationService {
       }
     }
 
+    // 3. Reconcile weekend watchlist notification
+    await this.reconcileWeekendWatchlistNotification(activeReminders);
+
     return {
       activeCount: activeReminders.length,
       rescheduledCount,
       purgedCount,
     };
+  }
+
+  /**
+   * Schedules a prospective weekend watchlist notification for Friday at 7:00 PM.
+   */
+  async scheduleWeekendWatchlistNotification(
+    unwatchedCount: number,
+    customDate?: Date,
+    now: Date = new Date()
+  ): Promise<string | null> {
+    if (Platform.OS === 'web' || unwatchedCount <= 0) {
+      if (unwatchedCount <= 0) {
+        await this.cancelWeekendWatchlistNotification();
+      }
+      return null;
+    }
+
+    try {
+      const hasPermission = await this.requestPermissions();
+      if (!hasPermission) {
+        return null;
+      }
+
+      await this.cancelWeekendWatchlistNotification();
+
+      const targetDate = customDate || calculateNextFriday7PM(now);
+
+      if (typeof Notifications.scheduleNotificationAsync !== 'function') {
+        return null;
+      }
+
+      const body =
+        unwatchedCount === 1
+          ? 'You have 1 unwatched title queued'
+          : `You have ${unwatchedCount} unwatched titles queued`;
+
+      const notificationId = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '🎬 Weekend Watchlist',
+          body,
+          categoryIdentifier: NOTIFICATION_CATEGORY,
+          data: {
+            screen: 'watchlist',
+            type: 'watchlist',
+            count: unwatchedCount,
+          },
+          sound: 'default',
+          priority: Notifications.AndroidNotificationPriority?.MAX,
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes?.DATE ?? 'date',
+          date: targetDate,
+          channelId: REMINDER_CHANNEL_ID,
+        } as any,
+      });
+
+      this.watchlistNotificationId = notificationId;
+      try {
+        await AsyncStorage.setItem(WATCHLIST_STORAGE_KEY, notificationId);
+      } catch {}
+
+      return notificationId;
+    } catch (error) {
+      console.warn('NotificationService: Error scheduling weekend watchlist notification:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Cancels the scheduled weekend watchlist notification.
+   */
+  async cancelWeekendWatchlistNotification(): Promise<void> {
+    if (Platform.OS === 'web') return;
+
+    try {
+      let id = this.watchlistNotificationId;
+      if (!id) {
+        try {
+          id = await AsyncStorage.getItem(WATCHLIST_STORAGE_KEY);
+        } catch {}
+      }
+
+      if (id) {
+        await this.cancelReminderNotification(id);
+        this.watchlistNotificationId = null;
+        try {
+          await AsyncStorage.removeItem(WATCHLIST_STORAGE_KEY);
+        } catch {}
+      }
+
+      if (typeof Notifications.getAllScheduledNotificationsAsync === 'function') {
+        try {
+          const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+          for (const notif of scheduled) {
+            if (
+              notif.content?.data?.screen === 'watchlist' ||
+              notif.content?.data?.type === 'watchlist'
+            ) {
+              await Notifications.cancelScheduledNotificationAsync(notif.identifier);
+            }
+          }
+        } catch {}
+      }
+    } catch (err) {
+      console.warn('NotificationService: Error cancelling weekend watchlist notification:', err);
+    }
+  }
+
+  /**
+   * Reconciles the weekend watchlist notification based on current active unwatched items.
+   */
+  async reconcileWeekendWatchlistNotification(
+    reminders: Reminder[],
+    now: Date = new Date()
+  ): Promise<string | null> {
+    const unwatched = reminders.filter(
+      (r) => r.status !== 'completed' && Boolean(r.culturalMetadata)
+    );
+    const count = unwatched.length;
+    if (count === 0) {
+      await this.cancelWeekendWatchlistNotification();
+      return null;
+    }
+    return this.scheduleWeekendWatchlistNotification(count, undefined, now);
   }
 
   /**

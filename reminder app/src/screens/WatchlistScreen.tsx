@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -20,6 +20,7 @@ import {
   formatCulturalBadge,
   POPULAR_PLATFORMS,
 } from '../utils/watchlistParser';
+import { notificationService } from '../services/notificationService';
 
 export interface WatchlistScreenProps {
   reminders: Reminder[];
@@ -50,7 +51,7 @@ export const WatchlistScreen: React.FC<WatchlistScreenProps> = ({
   onClose,
   onBack,
   themeColors: propColors,
-  currentTime = new Date(),
+  currentTime: propCurrentTime,
   testID = 'watchlist-screen',
 }) => {
   const themeContext = React.useContext(ThemeContext);
@@ -91,8 +92,14 @@ export const WatchlistScreen: React.FC<WatchlistScreenProps> = ({
   }, [culturalItems, activeTab, selectedPlatform]);
 
   const weekendCue = useMemo(() => {
-    return getWeekendWatchlistCue(reminders, currentTime);
-  }, [reminders, currentTime]);
+    return getWeekendWatchlistCue(reminders, propCurrentTime);
+  }, [reminders, propCurrentTime]);
+
+  useEffect(() => {
+    notificationService
+      .reconcileWeekendWatchlistNotification(reminders, propCurrentTime)
+      .catch(() => {});
+  }, [reminders, propCurrentTime]);
 
   const handleCapture = async () => {
     const trimmed = inputText.trim();
@@ -124,7 +131,8 @@ export const WatchlistScreen: React.FC<WatchlistScreenProps> = ({
     if (!onSnoozeReminder) return;
 
     // Calculate upcoming Friday 20:00 or Saturday
-    const target = new Date(currentTime);
+    const baseTime = propCurrentTime || new Date();
+    const target = new Date(baseTime);
     const day = target.getDay();
     const daysUntilFriday = (5 - day + 7) % 7;
     target.setDate(target.getDate() + (daysUntilFriday === 0 ? 0 : daysUntilFriday));

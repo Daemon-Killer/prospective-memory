@@ -37,6 +37,7 @@ export interface CaptureDraft {
   preset: CapturePreset;
   dueDate: Date;
   armed: boolean;
+  tags?: string[];
 }
 
 interface TimeRule {
@@ -175,14 +176,86 @@ export function inferTimeCue(
   return null;
 }
 
+/**
+ * Strips bullet points, numbered list markers, and checkbox markers from a line.
+ * Iteratively cleans chained prefixes like "1. [ ]" or "- [x]".
+ */
+export function cleanListPrefix(text: string): string {
+  let cleaned = text.trim();
+  let prev = '';
+  while (cleaned !== prev) {
+    prev = cleaned;
+    cleaned = cleaned
+      // Numbered items: "1.", "1)", "(1)", "[1]", "1 -" followed by space
+      .replace(/^(?:[([]?\d+[.)\]]|\d+\s*[-–—])\s*/, '')
+      // Checkboxes with optional bullet (e.g. "- [ ]", "* [x]", "[ ]")
+      .replace(/^(?:[-*+•◦▪▫–—]\s*)?\[[ xX]\]\s*/, '')
+      // Bullets (e.g. "-", "*", "+", "•", "◦", "▪", "▫", "–", "—")
+      .replace(/^[-*+•◦▪▫–—]\s*/, '')
+      .trim();
+  }
+  return cleaned;
+}
+
+/**
+ * Extracts hashtags from text, returning clean tags array and stripped text.
+ * Supports alphanumeric tags with underscores and internal hyphens (e.g. #grocery-list).
+ */
+export function extractTags(text: string): { tags: string[]; stripped: string } {
+  const matches = text.match(
+    /(?:^|\s)#([a-zA-Z_\u00C0-\u024F][a-zA-Z0-9_\u00C0-\u024F]*(?:-[a-zA-Z0-9_\u00C0-\u024F]+)*)/g
+  );
+  if (!matches) {
+    return { tags: [], stripped: text.trim() };
+  }
+
+  const tags: string[] = [];
+  let stripped = text;
+
+  for (const m of matches) {
+    const cleanTag = m.trim().replace(/^#/, '');
+    if (cleanTag && !tags.includes(cleanTag)) {
+      tags.push(cleanTag);
+    }
+    stripped = stripped.replace(m, ' ');
+  }
+
+  return {
+    tags,
+    stripped: stripped.replace(/\s+/g, ' ').trim(),
+  };
+}
+
+/**
+ * Detects whether text contains multiple lines, bullet points, numbered items, or checkboxes.
+ */
+export function isListOrMultiLine(text: string): boolean {
+  if (!text) return false;
+  if (/[\r\n]/.test(text)) return true;
+  if (/[•◦▪▫]/.test(text)) return true;
+  if (/(?:^|\s)(?:[-*+•◦▪▫–—]\s+)?\[[ xX]\]\s/.test(text)) return true;
+  // Numbered list items: "1. ... 2. ..." or "(1) ... (2) ..." or "[1] ... [2] ..." or "1) ... 2) ..."
+  if (
+    /(?:^|\s)(?:[([]?\d+[.)\]]|\d+\s*[-–—])\s+.*?(?:\s)(?:[([]?\d+[.)\]]|\d+\s*[-–—])\s+/.test(
+      text
+    )
+  )
+    return true;
+  // Multiple bullets: "- Item 1 - Item 2" or "* Item 1 * Item 2"
+  if (/(?:^|\s+)[-*+]\s+.*?(?:\s+)[-*+]\s+/.test(text)) return true;
+  return false;
+}
+
 export function compileCapture(
   raw: string,
   selectedChip: CaptureChip = 'inbox',
   now: Date = new Date(),
   lingoTable: string = DEFAULT_LINGO
 ): CaptureDraft {
-  const expansion = expandLingo(raw, lingoTable);
-  const title = expansion.output;
+  const cleanedRaw = cleanListPrefix(raw);
+  const { tags, stripped: tagStripped } = extractTags(cleanedRaw);
+  const expansion = expandLingo(tagStripped, lingoTable);
+  const title = expansion.output.slice(0, 255).trim();
 
   if (selectedChip !== 'inbox') {
     return {
@@ -192,6 +265,7 @@ export function compileCapture(
       preset: selectedChip,
       dueDate: CHIP_CALC[selectedChip](now),
       armed: true,
+      tags: tags.length > 0 ? tags : undefined,
     };
   }
 
@@ -199,11 +273,12 @@ export function compileCapture(
   if (inferred) {
     return {
       raw,
-      title: inferred.strippedTitle,
+      title: inferred.strippedTitle.slice(0, 255).trim(),
       lingoKey: expansion.key,
       preset: inferred.preset,
       dueDate: inferred.dueDate,
       armed: true,
+      tags: tags.length > 0 ? tags : undefined,
     };
   }
 
@@ -214,17 +289,65 @@ export function compileCapture(
     preset: 'inbox',
     dueDate: now,
     armed: false,
+    tags: tags.length > 0 ? tags : undefined,
   };
 }
 
 /**
- * Splits multi-line text (e.g. from clipboard paste) into distinct non-empty lines.
+ * Splits multi-line or list text (e.g. from clipboard paste) into distinct non-empty lines,
+ * detecting newlines, bullet points, checkboxes, and numbered items.
  */
 export function splitMultiLine(text: string): string[] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+  if (!text || !text.trim()) return [];
+
+  const hasNewlines = /[\r\n]/.test(text);
+  let rawChunks: string[] = [];
+
+  if (hasNewlines) {
+    rawChunks = text.split(/\r?\n/);
+  } else {
+    const hasInlineBullets = /[•◦▪▫]/.test(text);
+    const hasInlineCheckboxes = /(?:^|\s)(?:[-*+•◦▪▫–—]\s+)?\[[ xX]\]\s/.test(text);
+    const hasInlineNumbered =
+      /(?:^|\s)(?:[([]?\d+[.)\]]|\d+\s*[-–—])\s+.*?(?:\s)(?:[([]?\d+[.)\]]|\d+\s*[-–—])\s+/.test(
+        text
+      );
+    const hasInlineDashBullets = /(?:^|\s+)[-*+]\s+.*?(?:\s+)[-*+]\s+/.test(text);
+
+    if (hasInlineBullets) {
+      rawChunks = text.split(/(?:^|\s+)[•◦▪▫]\s+/);
+    } else if (hasInlineCheckboxes) {
+      rawChunks = text.split(/(?:^|\s+)(?:[-*+•◦▪▫–—]\s+)?\[[ xX]\]\s+/);
+    } else if (hasInlineNumbered) {
+      rawChunks = text.split(/(?:^|\s+)(?:[([]?\d+[.)\]]|\d+\s*[-–—])\s+/);
+    } else if (hasInlineDashBullets) {
+      rawChunks = text.split(/(?:^|\s+)[-*+]\s+/);
+    } else {
+      rawChunks = [text];
+    }
+  }
+
+  const expanded: string[] = [];
+  for (const chunk of rawChunks) {
+    const trimmed = chunk.trim();
+    if (!trimmed) continue;
+    if (/[•◦▪▫]/.test(trimmed)) {
+      const sub = trimmed
+        .split(/(?:^|\s+)[•◦▪▫]\s+/)
+        .map((s) => cleanListPrefix(s))
+        .filter(Boolean);
+      if (sub.length > 1) {
+        expanded.push(...sub);
+        continue;
+      }
+    }
+    const cleaned = cleanListPrefix(trimmed);
+    if (cleaned.length > 0) {
+      expanded.push(cleaned);
+    }
+  }
+
+  return expanded;
 }
 
 /**

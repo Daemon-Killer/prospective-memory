@@ -17,6 +17,7 @@ import { notificationService } from '../services/notificationService';
 
 export interface UseNotificationsOptions {
   onOpenSnoozeModal?: (reminderId: string) => void;
+  onOpenWatchlist?: () => void;
   autoRequestPermissions?: boolean;
 }
 
@@ -63,9 +64,18 @@ export function useNotifications(options: UseNotificationsOptions = {}): UseNoti
         if (typeof Notifications.addNotificationResponseReceivedListener === 'function') {
           responseSubscription = Notifications.addNotificationResponseReceivedListener(async (response) => {
             const actionId = response.actionIdentifier;
+            const data = response.notification?.request?.content?.data as any;
             const reminderId =
-              (response.notification?.request?.content?.data?.reminderId as string | undefined) ||
-              (response.notification?.request?.content?.data as any)?.id;
+              (data?.reminderId as string | undefined) ||
+              data?.id;
+
+            // Route weekend watchlist notifications directly to watchlist tab
+            if (data?.screen === 'watchlist' || data?.type === 'watchlist') {
+              if (optionsRef.current.onOpenWatchlist) {
+                optionsRef.current.onOpenWatchlist();
+              }
+              return;
+            }
 
             if (actionId === Notifications.DEFAULT_ACTION_IDENTIFIER) {
               // Body tap -> route to target reminder and open snooze modal
@@ -85,11 +95,16 @@ export function useNotifications(options: UseNotificationsOptions = {}): UseNoti
             const lastResponse = await Notifications.getLastNotificationResponseAsync();
             if (lastResponse) {
               const actionId = lastResponse.actionIdentifier;
+              const data = lastResponse.notification?.request?.content?.data as any;
               const reminderId =
-                (lastResponse.notification?.request?.content?.data?.reminderId as string | undefined) ||
-                (lastResponse.notification?.request?.content?.data as any)?.id;
+                (data?.reminderId as string | undefined) ||
+                data?.id;
 
-              if (actionId === Notifications.DEFAULT_ACTION_IDENTIFIER && reminderId) {
+              if (data?.screen === 'watchlist' || data?.type === 'watchlist') {
+                if (optionsRef.current.onOpenWatchlist) {
+                  optionsRef.current.onOpenWatchlist();
+                }
+              } else if (actionId === Notifications.DEFAULT_ACTION_IDENTIFIER && reminderId) {
                 if (optionsRef.current.onOpenSnoozeModal) {
                   optionsRef.current.onOpenSnoozeModal(reminderId);
                 }

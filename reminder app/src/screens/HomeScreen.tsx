@@ -268,6 +268,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   useNotifications({
     onOpenSnoozeModal: handleOpenSnoozeModalFromNotification,
+    onOpenWatchlist: handleOpenWatchlist,
   });
 
   // Check for incoming shared text from system-level ingress (Android Intent.ACTION_SEND)

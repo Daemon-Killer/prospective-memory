@@ -1,11 +1,14 @@
 import {
+  cleanListPrefix,
   compileCapture,
   compileMultiLineCapture,
   compressToLingo,
   expandLingo,
+  extractTags,
   getLingoSuggestions,
   getStoredLingo,
   inferTimeCue,
+  isListOrMultiLine,
   resetStoredLingo,
   saveStoredLingo,
   splitMultiLine,
@@ -131,6 +134,128 @@ describe('captureCompiler', () => {
       expect(drafts[0].armed).toBe(true);
       expect(drafts[249].title).toBe('Task item #250');
       expect(elapsed).toBeLessThan(100);
+    });
+
+    it('splits markdown bullet points and checkboxes into atomic cards', () => {
+      const input = [
+        '- [ ] Buy oat milk tomorrow morning #groceries',
+        '- [x] Call mom tonight #family',
+        '* [ ] pay bill',
+        '- Submit quarterly report',
+        '* Water house plants kal',
+        '• Check passport expiry',
+        '▪ Fix bicycle chain',
+      ].join('\n');
+
+      const drafts = compileMultiLineCapture(input, 'inbox', now);
+      expect(drafts).toHaveLength(7);
+      expect(drafts[0].title).toBe('buy oat milk');
+      expect(drafts[0].preset).toBe('tomorrow_morning');
+      expect(drafts[0].armed).toBe(true);
+      expect(drafts[0].tags).toEqual(['groceries']);
+
+      expect(drafts[1].title).toBe('call mom');
+      expect(drafts[1].preset).toBe('evening');
+      expect(drafts[1].armed).toBe(true);
+      expect(drafts[1].tags).toEqual(['family']);
+
+      expect(drafts[2].title).toBe('pay electricity bill');
+      expect(drafts[2].armed).toBe(false);
+
+      expect(drafts[3].title).toBe('Submit quarterly report');
+      expect(drafts[4].title).toBe('Water house plants');
+      expect(drafts[4].preset).toBe('tomorrow_morning');
+      expect(drafts[4].armed).toBe(true);
+
+      expect(drafts[5].title).toBe('Check passport expiry');
+      expect(drafts[6].title).toBe('Fix bicycle chain');
+    });
+
+    it('splits numbered lists (1., 2), (1)) and strips prefixes cleanly', () => {
+      const input = [
+        '1. Buy groceries',
+        '2) Call dentist shaam',
+        '(3) File taxes kal',
+        '[4] Clean garage',
+      ].join('\n');
+
+      const drafts = compileMultiLineCapture(input, 'inbox', now);
+      expect(drafts).toHaveLength(4);
+      expect(drafts[0].title).toBe('buy groceries');
+      expect(drafts[1].title).toBe('call dentist');
+      expect(drafts[1].preset).toBe('evening');
+      expect(drafts[1].armed).toBe(true);
+      expect(drafts[2].title).toBe('File taxes');
+      expect(drafts[2].preset).toBe('tomorrow_morning');
+      expect(drafts[2].armed).toBe(true);
+      expect(drafts[3].title).toBe('Clean garage');
+    });
+
+    it('splits inline bullet lists and numbered lists on a single line', () => {
+      const inlineBullets = '• Buy groceries • Call landlord • Order medication';
+      const bulletDrafts = compileMultiLineCapture(inlineBullets, 'inbox', now);
+      expect(bulletDrafts).toHaveLength(3);
+      expect(bulletDrafts[0].title).toBe('buy groceries');
+      expect(bulletDrafts[1].title).toBe('call landlord');
+      expect(bulletDrafts[2].title).toBe('Order medication');
+
+      const inlineNumbered = '1. First task 2. Second task 3. Third task';
+      const numDrafts = compileMultiLineCapture(inlineNumbered, 'inbox', now);
+      expect(numDrafts).toHaveLength(3);
+      expect(numDrafts[0].title).toBe('First task');
+      expect(numDrafts[1].title).toBe('Second task');
+      expect(numDrafts[2].title).toBe('Third task');
+
+      const parenNumbered = '(1) Buy milk (2) Call dentist (3) Pick up dry cleaning';
+      const parenDrafts = compileMultiLineCapture(parenNumbered, 'inbox', now);
+      expect(parenDrafts).toHaveLength(3);
+      expect(parenDrafts[0].title).toBe('buy milk');
+      expect(parenDrafts[1].title).toBe('call dentist');
+      expect(parenDrafts[2].title).toBe('Pick up dry cleaning');
+
+      const bracketNumbered = '[1] Task one [2] Task two';
+      const bracketDrafts = compileMultiLineCapture(bracketNumbered, 'inbox', now);
+      expect(bracketDrafts).toHaveLength(2);
+      expect(bracketDrafts[0].title).toBe('Task one');
+      expect(bracketDrafts[1].title).toBe('Task two');
+
+      const inlineDashes = '- Clean kitchen - Do laundry - Read book';
+      const dashDrafts = compileMultiLineCapture(inlineDashes, 'inbox', now);
+      expect(dashDrafts).toHaveLength(3);
+      expect(dashDrafts[0].title).toBe('Clean kitchen');
+      expect(dashDrafts[1].title).toBe('Do laundry');
+      expect(dashDrafts[2].title).toBe('Read book');
+    });
+
+    it('cleans chained and nested list prefixes cleanly (1. [ ], • [x], etc.)', () => {
+      expect(cleanListPrefix('1. [ ] Buy almond milk')).toBe('Buy almond milk');
+      expect(cleanListPrefix('• [x] Done with report')).toBe('Done with report');
+      expect(cleanListPrefix('- 1. Double prefixed')).toBe('Double prefixed');
+      expect(cleanListPrefix('(2) [ ] Call bank')).toBe('Call bank');
+    });
+
+    it('extracts multiple tags including hyphenated tags (#work #grocery-list #q3_review) and cleans title', () => {
+      const { tags, stripped } = extractTags('Finish spreadsheet #work #grocery-list #q3_review');
+      expect(tags).toEqual(['work', 'grocery-list', 'q3_review']);
+      expect(stripped).toBe('Finish spreadsheet');
+    });
+
+    it('detects list or multi-line text accurately via isListOrMultiLine', () => {
+      expect(isListOrMultiLine('Single line task')).toBe(false);
+      expect(isListOrMultiLine('Task 1\nTask 2')).toBe(true);
+      expect(isListOrMultiLine('• Task 1 • Task 2')).toBe(true);
+      expect(isListOrMultiLine('- [ ] Task 1')).toBe(true);
+      expect(isListOrMultiLine('1. Task 1 2. Task 2')).toBe(true);
+      expect(isListOrMultiLine('(1) Task 1 (2) Task 2')).toBe(true);
+      expect(isListOrMultiLine('[1] Task 1 [2] Task 2')).toBe(true);
+      expect(isListOrMultiLine('- Task 1 - Task 2')).toBe(true);
+    });
+
+    it('strictly clamps individual titles to 255 chars to prevent storage crash', () => {
+      const superLongTitle = 'A'.repeat(400);
+      const draft = compileCapture(superLongTitle, 'inbox', now);
+      expect(draft.title.length).toBe(255);
+      expect(draft.title).toBe('A'.repeat(255));
     });
   });
 
