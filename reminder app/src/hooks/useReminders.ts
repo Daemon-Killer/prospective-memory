@@ -187,18 +187,17 @@ export function useReminders(
         const updated = await repo.update(id, updates);
 
         // Synchronize notification scheduling
-        if (updates.status === 'completed' && existing?.notificationId) {
-          await notifier.cancelReminderNotification(existing.notificationId);
-          await repo.setNotificationId(id, null);
-        } else if (
-          (updates.dueDate || updates.status || updates.armed) &&
+        const shouldBeScheduled =
           updated.status !== 'completed' &&
           isReminderArmed(updated) &&
-          new Date(updated.dueDate).getTime() > Date.now()
-        ) {
-          if (existing?.notificationId) {
-            await notifier.cancelReminderNotification(existing.notificationId);
-          }
+          new Date(updated.dueDate).getTime() > Date.now();
+
+        if (existing?.notificationId) {
+          await notifier.cancelReminderNotification(existing.notificationId);
+          await repo.setNotificationId(id, null);
+        }
+
+        if (shouldBeScheduled) {
           const notifId = await notifier.scheduleReminderNotification(updated);
           if (notifId) {
             await repo.setNotificationId(id, notifId);

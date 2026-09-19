@@ -8,3 +8,4 @@ export * from './EmptyState';
 export * from './CloudSyncModal';
 export * from './DrawingCanvasModal';
 export * from './BubbleSettingsModal';
+export * from './EditReminderModal';

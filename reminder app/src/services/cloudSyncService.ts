@@ -264,6 +264,28 @@ export class CloudSyncService {
     }
   }
 
+  /**
+   * Directly posts a single reminder update to /v1/reminders on the cloud backend.
+   */
+  async syncSingleReminder(reminder: Reminder): Promise<boolean> {
+    if (!this.enabled) return false;
+    try {
+      const { notificationId: _nid, ...wire } = reminder;
+      const response = await fetch(`${this.apiUrl}/v1/reminders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-PMEM-TOKEN': this.token,
+        },
+        body: JSON.stringify(wire),
+      });
+      return response.ok;
+    } catch (err) {
+      console.warn('CloudSyncService: Error posting reminder to /v1/reminders', err);
+      return false;
+    }
+  }
+
   private scheduleBackoffRetry(): void {
     if (!this.enabled || isJestRuntime()) {
       return;

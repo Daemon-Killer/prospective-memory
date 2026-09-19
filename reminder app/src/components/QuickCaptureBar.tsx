@@ -54,6 +54,11 @@ export interface QuickCaptureBarProps {
   placeholder?: string;
   autoFocus?: boolean;
   testID?: string;
+  /**
+   * @deprecated Handwritten ink feature has been retired from active capture in favor of home/lockscreen widgets.
+   * Defaults to true for backward compatibility with existing tests; set to false in primary app UI.
+   */
+  showInkCapture?: boolean;
 }
 
 function useSafeInsets() {
@@ -71,6 +76,7 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
   placeholder = 'DAHI LENA  ·  C MOM  ·  TONIGHT',
   autoFocus = false,
   testID = 'quick-capture-bar',
+  showInkCapture = true,
 }) => {
   const insets = useSafeInsets();
   const theme = useTheme();
@@ -366,29 +372,31 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
               {isListening ? '●' : '🎙'}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            testID="quick-capture-ink-btn"
-            onPress={() => {
-              if (Platform.OS !== 'web') {
-                try {
-                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                } catch {}
-              }
-              setInkModalVisible(true);
-            }}
-            style={[
-              styles.inkButton,
-              {
-                borderColor: themeColors.border,
-                backgroundColor: themeColors.surfaceSubtle,
-                height: isMultiLineLayout ? 72 : 44,
-              },
-            ]}
-            activeOpacity={0.7}
-            accessibilityLabel="Open Ink Canvas"
-          >
-            <Text style={[styles.inkButtonText, { color: themeColors.textPrimary }]}>✎</Text>
-          </TouchableOpacity>
+          {showInkCapture && (
+            <TouchableOpacity
+              testID="quick-capture-ink-btn"
+              onPress={() => {
+                if (Platform.OS !== 'web') {
+                  try {
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  } catch {}
+                }
+                setInkModalVisible(true);
+              }}
+              style={[
+                styles.inkButton,
+                {
+                  borderColor: themeColors.border,
+                  backgroundColor: themeColors.surfaceSubtle,
+                  height: isMultiLineLayout ? 72 : 44,
+                },
+              ]}
+              activeOpacity={0.7}
+              accessibilityLabel="Open Ink Canvas"
+            >
+              <Text style={[styles.inkButtonText, { color: themeColors.textPrimary }]}>✎</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             testID="quick-capture-submit"
             onPress={handleCapture}
@@ -462,14 +470,16 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
           </Text>
         ) : null}
       </View>
-      <DrawingCanvasModal
-        visible={inkModalVisible}
-        onClose={() => setInkModalVisible(false)}
-        onSave={async (payload) => {
-          await onCreateReminder(payload);
-        }}
-        themeColors={themeColors}
-      />
+      {showInkCapture && (
+        <DrawingCanvasModal
+          visible={inkModalVisible}
+          onClose={() => setInkModalVisible(false)}
+          onSave={async (payload) => {
+            await onCreateReminder(payload);
+          }}
+          themeColors={themeColors}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 };

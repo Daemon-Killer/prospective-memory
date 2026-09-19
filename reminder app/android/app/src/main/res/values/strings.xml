@@ -1,4 +1,5 @@
 <resources>
   <string name="app_name">Remy Reminders</string>
   <string name="widget_desc">Lockscreen &amp; Home Quick Thought Capture</string>
+  <string name="widget_agenda_desc">Glanceable Today Agenda &amp; Top Prospective Cards</string>
 </resources>

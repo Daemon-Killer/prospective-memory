@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import {
   Reminder,
   ReminderStatus,
@@ -7,6 +8,7 @@ import {
   UpdateReminderInput,
 } from '../types/reminder';
 import { generateUUID } from '../utils/idGenerator';
+import { remyCaptureService } from './remyCaptureService';
 
 function readArmed(item: { armed?: unknown }): boolean | undefined {
   if (typeof item.armed === 'boolean') return item.armed;
@@ -165,6 +167,7 @@ export class StorageService implements IReminderRepository {
                 notificationId: item.notificationId !== undefined && item.notificationId !== null ? String(item.notificationId) : null,
                 ...(item.isDeleted ? { isDeleted: true } : {}),
                 ...(armed !== undefined ? { armed } : {}),
+                ...(item.priority ? { priority: item.priority } : {}),
                 ...(item.inkData ? { inkData: item.inkData } : {}),
                 ...(item.culturalMetadata ? { culturalMetadata: item.culturalMetadata } : {}),
               };
@@ -312,6 +315,7 @@ export class StorageService implements IReminderRepository {
       completedAt: null,
       notificationId: null,
       armed: input.armed !== false,
+      ...(input.priority ? { priority: input.priority } : {}),
       ...(input.inkData ? { inkData: input.inkData } : {}),
       ...(input.culturalMetadata ? { culturalMetadata: input.culturalMetadata } : {}),
     };
@@ -393,6 +397,11 @@ export class StorageService implements IReminderRepository {
       completedAt,
       updatedAt: now,
       ...(armed !== undefined ? { armed } : {}),
+      ...(updates.priority !== undefined
+        ? (updates.priority ? { priority: updates.priority } : {})
+        : existing.priority
+        ? { priority: existing.priority }
+        : {}),
       ...(updates.inkData ? { inkData: updates.inkData } : {}),
       ...(updates.culturalMetadata !== undefined
         ? (updates.culturalMetadata ? { culturalMetadata: updates.culturalMetadata } : {})
@@ -401,6 +410,9 @@ export class StorageService implements IReminderRepository {
         : {}),
     };
 
+    if (updates.priority === null) {
+      delete updated.priority;
+    }
     if (updates.inkData === null || updates.inkData === '') {
       delete updated.inkData;
     }
@@ -617,6 +629,13 @@ export class StorageService implements IReminderRepository {
         console.error('StorageService: Mutation listener error', e);
       }
     });
+
+    if (Platform.OS === 'android') {
+      try {
+        const active = this.getActive();
+        void remyCaptureService.updateWidgetData(JSON.stringify(active)).catch(() => {});
+      } catch {}
+    }
   }
 
   /**
@@ -674,6 +693,13 @@ export class StorageService implements IReminderRepository {
           : existing?.armed !== undefined
             ? { armed: existing.armed }
             : {}),
+        ...(item.priority
+          ? { priority: item.priority }
+          : item.priority === null
+            ? {}
+            : existing?.priority
+              ? { priority: existing.priority }
+              : {}),
         ...(item.inkData
           ? { inkData: item.inkData }
           : item.inkData === null

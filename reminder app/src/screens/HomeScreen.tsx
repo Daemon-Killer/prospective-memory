@@ -8,6 +8,7 @@ import { useReminders } from '../hooks/useReminders';
 import { useNotifications } from '../hooks/useNotifications';
 import { remyCaptureService } from '../services/remyCaptureService';
 import { cloudSyncService } from '../services/cloudSyncService';
+import { storageService } from '../services/storageService';
 import { sensoryStorageService } from '../sensory/sensoryStorageService';
 import { dealsStorageService } from '../sensory/dealsStorageService';
 import { sensoryBridge } from '../sensory/sensoryBridge';
@@ -20,8 +21,9 @@ import { WatchlistScreen } from './WatchlistScreen';
 import { ReminderList } from '../components/ReminderList';
 import { QuickCaptureBar } from '../components/QuickCaptureBar';
 import { SnoozeModal } from '../components/SnoozeModal';
+import { EditReminderModal } from '../components/EditReminderModal';
 import { BubbleSettingsModal } from '../components/BubbleSettingsModal';
-import { Reminder, SnoozePreset, CulturalMetadata } from '../types/reminder';
+import { Reminder, SnoozePreset, CulturalMetadata, UpdateReminderInput } from '../types/reminder';
 import { CapturePreset, compileMultiLineCapture, getStoredLingo } from '../utils/captureCompiler';
 import { getWeekendWatchlistCue } from '../utils/watchlistParser';
 
@@ -39,6 +41,7 @@ export interface HomeScreenProps {
   onToggleComplete?: (id: string) => Promise<void> | void;
   onSnoozeReminder?: (reminder: Reminder) => void;
   onDeleteReminder?: (id: string) => Promise<void> | void;
+  onUpdateReminder?: (id: string, updates: UpdateReminderInput) => Promise<Reminder | void> | void;
   onRefresh?: () => Promise<void>;
   isRefreshing?: boolean;
   suggestions?: SensorySuggestion[];
@@ -58,6 +61,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onToggleComplete: propOnToggleComplete,
   onSnoozeReminder: propOnSnooze,
   onDeleteReminder: propOnDelete,
+  onUpdateReminder: propOnUpdateReminder,
   onRefresh: propOnRefresh,
   isRefreshing: propIsRefreshing,
   suggestions: propSuggestions,
@@ -307,6 +311,30 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           }
           await remyCaptureService.clearPendingCaptures();
         }
+
+        // 3. Process widget completions & snoozes from lockscreen / homescreen widgets
+        const widgetRaw = await remyCaptureService.getWidgetData();
+        if (widgetRaw && widgetRaw !== '[]' && isMounted) {
+          try {
+            const widgetItems = JSON.parse(widgetRaw);
+            if (Array.isArray(widgetItems)) {
+              for (const wItem of widgetItems) {
+                if (!wItem?.id) continue;
+                const local = storageService.getById(wItem.id);
+                if (!local) continue;
+                if (wItem.status === 'completed' && local.status !== 'completed') {
+                  await remindersHook.toggleComplete(wItem.id);
+                } else if (
+                  wItem.status === 'snoozed' &&
+                  (wItem.snoozeCount || 0) > local.snoozeCount &&
+                  wItem.dueDate
+                ) {
+                  await remindersHook.snoozeReminder(wItem.id, new Date(wItem.dueDate));
+                }
+              }
+            }
+          } catch {}
+        }
       } catch (err) {
         console.warn('HomeScreen: Error consuming ingress captures:', err);
       }
@@ -365,6 +393,28 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const handleConfirmSnooze = async (reminderId: string, targetDate: Date, preset?: SnoozePreset) => {
     await remindersHook.snoozeReminder(reminderId, targetDate, preset);
+  };
+
+  const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
+  const [editModalVisible, setEditModalVisible] = useState<boolean>(false);
+
+  const handleOpenEdit = (reminder: Reminder) => {
+    setEditingReminder(reminder);
+    setEditModalVisible(true);
+  };
+
+  const handleCloseEditModal = () => {
+    setEditModalVisible(false);
+    setEditingReminder(null);
+  };
+
+  const handleSaveEditedReminder = async (id: string, updates: UpdateReminderInput) => {
+    if (propOnUpdateReminder) {
+      await propOnUpdateReminder(id, updates);
+    } else {
+      const updated = await remindersHook.updateReminder(id, updates);
+      void cloudSyncService.syncSingleReminder(updated).catch(() => {});
+    }
   };
 
   const [internalRefreshing, setInternalRefreshing] = useState(false);
@@ -441,6 +491,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             onToggleComplete={handleToggleComplete}
             onSnoozePress={handleOpenSnooze}
             onDeletePress={handleDeleteReminder}
+            onEditPress={handleOpenEdit}
             onRefresh={handleRefresh}
             isRefreshing={isRefreshing}
           />
@@ -449,6 +500,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         <QuickCaptureBar
           onCreateReminder={handleCreateReminder}
           themeColors={colors}
+          showInkCapture={false}
         />
 
         <SnoozeModal
@@ -456,6 +508,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           reminder={selectedReminderForSnooze}
           onClose={handleCloseSnoozeModal}
           onSnooze={handleConfirmSnooze}
+          themeColors={colors}
+        />
+
+        <EditReminderModal
+          visible={editModalVisible}
+          reminder={editingReminder}
+          onClose={handleCloseEditModal}
+          onSave={handleSaveEditedReminder}
           themeColors={colors}
         />
 

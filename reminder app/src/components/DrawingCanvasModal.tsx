@@ -27,6 +27,10 @@ export interface InkStroke {
   points: InkPoint[];
 }
 
+/**
+ * @deprecated Handwritten ink feature has been retired from primary capture in favor of home/lockscreen widgets.
+ * Retained for backward compatibility with historical reminders and tests.
+ */
 export interface DrawingCanvasModalProps {
   visible: boolean;
   onClose: () => void;

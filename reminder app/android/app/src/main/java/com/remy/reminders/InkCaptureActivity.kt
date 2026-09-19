@@ -33,8 +33,9 @@ import kotlin.concurrent.thread
 
 /**
  * High-speed lockscreen visual ink / stylus capture dialog.
- * Opens directly above lockscreen/keyguard with Swiss Void aesthetic.
+ * @deprecated Handwritten ink feature has been retired from primary capture in favor of home/lockscreen widgets.
  */
+@Deprecated("Handwritten ink feature has been retired from primary capture in favor of home/lockscreen widgets.")
 class InkCaptureActivity : Activity() {
 
     private var selectedPreset: String = "inbox"

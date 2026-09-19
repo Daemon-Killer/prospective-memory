@@ -70,12 +70,20 @@ export interface Reminder {
    */
   armed?: boolean;
 
-  /** Optional visual ink / stylus stroke or drawing payload */
+  /**
+   * @deprecated Handwritten ink feature has been retired from active capture in favor of home/lockscreen widgets.
+   * Retained strictly for backward compatibility with historical reminders.
+   */
   inkData?: string | null;
+
+  /** Priority level for sorting and triage */
+  priority?: ReminderPriority | null;
 
   /** Optional cultural / leisure recommendation metadata (movies, shows, books, docs) */
   culturalMetadata?: CulturalMetadata | null;
 }
+
+export type ReminderPriority = 'low' | 'medium' | 'high';
 
 export type CulturalMediaType = 'movie' | 'show' | 'documentary' | 'book' | 'other';
 
@@ -100,6 +108,8 @@ export interface CreateReminderInput {
   notes?: string | null;
   dueDate: string;
   armed?: boolean;
+  priority?: ReminderPriority | null;
+  /** @deprecated Retired from active capture */
   inkData?: string | null;
   culturalMetadata?: CulturalMetadata | null;
 }
@@ -110,6 +120,8 @@ export interface UpdateReminderInput {
   dueDate?: string;
   status?: ReminderStatus;
   armed?: boolean;
+  priority?: ReminderPriority | null;
+  /** @deprecated Retired from active capture */
   inkData?: string | null;
   culturalMetadata?: CulturalMetadata | null;
 }

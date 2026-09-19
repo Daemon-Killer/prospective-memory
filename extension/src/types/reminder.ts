@@ -45,8 +45,13 @@ export interface Reminder {
   /** False = inbox dump with no alarm. Missing/true = scheduled alarm */
   armed?: boolean;
 
-  /** Optional visual ink / stylus stroke or drawing payload */
+  /**
+   * @deprecated Handwritten ink feature has been retired in favor of direct input and widgets.
+   */
   inkData?: string | null;
+
+  /** Priority level */
+  priority?: 'low' | 'medium' | 'high' | null;
 
   /** Optional cultural / leisure recommendation metadata (movies, shows, books, docs) */
   culturalMetadata?: CulturalMetadata | null;
@@ -68,11 +73,26 @@ export function isReminderArmed(reminder: { armed?: boolean }): boolean {
   return reminder.armed !== false;
 }
 
+export type ReminderPriority = 'low' | 'medium' | 'high';
+
 export interface CreateReminderInput {
+  id?: string;
   title: string;
   notes?: string | null;
   dueDate?: string;
   armed?: boolean;
+  priority?: ReminderPriority | null;
+  inkData?: string | null;
+  culturalMetadata?: CulturalMetadata | null;
+}
+
+export interface UpdateReminderInput {
+  title?: string;
+  notes?: string | null;
+  dueDate?: string;
+  status?: ReminderStatus;
+  armed?: boolean;
+  priority?: ReminderPriority | null;
   inkData?: string | null;
   culturalMetadata?: CulturalMetadata | null;
 }

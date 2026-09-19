@@ -160,6 +160,29 @@ class RemyCaptureModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    @ReactMethod
+    fun updateWidgetData(remindersJson: String, promise: Promise) {
+        try {
+            val prefs = reactContext.getSharedPreferences(QuickCaptureActivity.PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().putString(AgendaWidget.PREF_WIDGET_REMINDERS, remindersJson).apply()
+            AgendaWidget.updateAll(reactContext)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("ERR_UPDATE_WIDGET", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun getWidgetData(promise: Promise) {
+        try {
+            val prefs = reactContext.getSharedPreferences(QuickCaptureActivity.PREFS_NAME, Context.MODE_PRIVATE)
+            val json = prefs.getString(AgendaWidget.PREF_WIDGET_REMINDERS, "[]") ?: "[]"
+            promise.resolve(json)
+        } catch (e: Exception) {
+            promise.reject("ERR_GET_WIDGET_DATA", e.message)
+        }
+    }
+
     companion object {
         @Volatile
         var sharedText: String? = null

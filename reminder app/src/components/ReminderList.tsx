@@ -21,6 +21,7 @@ export interface ReminderListProps {
   onToggleComplete: (id: string) => void;
   onSnoozePress: (reminder: Reminder) => void;
   onDeletePress?: (id: string) => void;
+  onEditPress?: (reminder: Reminder) => void;
   onRefresh?: () => Promise<void>;
   isRefreshing?: boolean;
   currentTime?: Date;
@@ -34,6 +35,7 @@ export const ReminderList: React.FC<ReminderListProps> = ({
   onToggleComplete,
   onSnoozePress,
   onDeletePress,
+  onEditPress,
   onRefresh,
   isRefreshing = false,
   currentTime = new Date(),
@@ -143,6 +145,7 @@ export const ReminderList: React.FC<ReminderListProps> = ({
               onToggleComplete={onToggleComplete}
               onSnoozePress={onSnoozePress}
               onDeletePress={onDeletePress}
+              onEditPress={onEditPress}
               currentTime={currentTime}
             />
           )}

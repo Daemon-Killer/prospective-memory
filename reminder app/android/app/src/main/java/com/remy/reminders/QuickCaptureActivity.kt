@@ -44,12 +44,40 @@ class QuickCaptureActivity : Activity() {
     private var selectedPreset: String = "inbox"
     private lateinit var inputField: EditText
     private lateinit var previewText: TextView
+    private val chipButtonMap = mutableMapOf<String, Button>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val presetExtra = intent?.getStringExtra("preset")
+        if (!presetExtra.isNullOrEmpty()) {
+            selectedPreset = presetExtra
+        }
+
         configureLockscreenFlags()
         buildSwissCaptureUi()
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val presetExtra = intent?.getStringExtra("preset")
+        if (!presetExtra.isNullOrEmpty()) {
+            selectPreset(presetExtra)
+        }
+    }
+
+    private fun selectPreset(key: String) {
+        selectedPreset = key
+        chipButtonMap.forEach { (chipKey, btn) ->
+            val isSelected = selectedPreset == chipKey
+            btn.background = GradientDrawable().apply {
+                setColor(if (isSelected) Color.WHITE else Color.parseColor("#1E1E1E"))
+                setStroke(2, if (isSelected) Color.WHITE else Color.parseColor("#444444"))
+            }
+            btn.setTextColor(if (isSelected) Color.BLACK else Color.LTGRAY)
+        }
+        updatePreview()
     }
 
     private fun configureLockscreenFlags() {
@@ -131,8 +159,7 @@ class QuickCaptureActivity : Activity() {
             "evening" to "TONIGHT",
             "tomorrow_morning" to "TOMORROW 9AM"
         )
-        val chipButtons = mutableListOf<Button>()
-
+        chipButtonMap.clear()
         chipList.forEach { (key, label) ->
             val btn = Button(this).apply {
                 text = label
@@ -144,25 +171,14 @@ class QuickCaptureActivity : Activity() {
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { setMargins(0, 0, 12, 0) }
 
-                fun updateStyle() {
-                    val isSelected = selectedPreset == key
-                    background = GradientDrawable().apply {
-                        setColor(if (isSelected) Color.WHITE else Color.parseColor("#1E1E1E"))
-                        setStroke(2, if (isSelected) Color.WHITE else Color.parseColor("#444444"))
-                    }
-                    setTextColor(if (isSelected) Color.BLACK else Color.LTGRAY)
-                }
-
                 setOnClickListener {
-                    selectedPreset = key
-                    chipButtons.forEach { it.invalidate() }
-                    updatePreview()
+                    selectPreset(key)
                 }
-                updateStyle()
             }
-            chipButtons.add(btn)
+            chipButtonMap[key] = btn
             chipsRow.addView(btn)
         }
+        selectPreset(selectedPreset)
         chipsScroll.addView(chipsRow)
 
         // Input Field
@@ -207,18 +223,6 @@ class QuickCaptureActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val writeInsteadBtn = Button(this).apply {
-            text = "WRITE INSTEAD"
-            textSize = 10f
-            setTextColor(Color.parseColor("#80CBC4"))
-            setBackgroundColor(Color.TRANSPARENT)
-            setOnClickListener {
-                startActivity(Intent(this@QuickCaptureActivity, InkCaptureActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                })
-                finish()
-            }
-        }
         val buttonSpacer = View(this).apply {
             layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
         }
@@ -240,7 +244,7 @@ class QuickCaptureActivity : Activity() {
             setPadding(28, 12, 28, 12)
             setOnClickListener { submitCapture() }
         }
-        buttonRow.addView(writeInsteadBtn)
+        // Handwritten stylus ink retired from capture UI in favor of widgets
         buttonRow.addView(buttonSpacer)
         buttonRow.addView(cancelBtn)
         buttonRow.addView(captureBtn)
@@ -414,6 +418,17 @@ class QuickCaptureActivity : Activity() {
             }
             array.put(item)
             prefs.edit().putString(PREF_PENDING_CAPTURES, array.toString()).apply()
+
+            // Also immediately sync to AgendaWidget so lockscreen & homescreen agenda widgets display the new item instantly
+            val widgetJson = prefs.getString(AgendaWidget.PREF_WIDGET_REMINDERS, "[]") ?: "[]"
+            val widgetArray = try {
+                JSONArray(widgetJson)
+            } catch (_: Exception) {
+                JSONArray()
+            }
+            widgetArray.put(item)
+            prefs.edit().putString(AgendaWidget.PREF_WIDGET_REMINDERS, widgetArray.toString()).apply()
+            AgendaWidget.updateAll(this)
         } catch (e: Exception) {
             e.printStackTrace()
         }

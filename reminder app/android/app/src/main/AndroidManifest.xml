@@ -69,6 +69,20 @@
           android:name="android.appwidget.provider"
           android:resource="@xml/quick_capture_widget_info" />
     </receiver>
+    <receiver
+        android:name=".AgendaWidget"
+        android:exported="true"
+        android:label="Remy Today Agenda">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+        <action android:name="com.remy.reminders.ACTION_COMPLETE_REMINDER" />
+        <action android:name="com.remy.reminders.ACTION_SNOOZE_REMINDER" />
+        <action android:name="com.remy.reminders.ACTION_REFRESH_WIDGET" />
+      </intent-filter>
+      <meta-data
+          android:name="android.appwidget.provider"
+          android:resource="@xml/agenda_widget_info" />
+    </receiver>
     <service
         android:name=".BubbleService"
         android:exported="false"

@@ -15,8 +15,9 @@ import kotlin.math.abs
 
 /**
  * High-performance, low-latency drawing canvas for rapid visual sketch and handwriting capture.
- * Supports fingers and high-precision styluses with hardware-accelerated Bézier curves.
+ * @deprecated Handwritten ink feature has been retired from primary capture in favor of home/lockscreen widgets.
  */
+@Deprecated("Handwritten ink feature has been retired from primary capture in favor of home/lockscreen widgets.")
 class DrawingCanvasView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,

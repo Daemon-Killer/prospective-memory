@@ -23,6 +23,8 @@ export interface IRemyCaptureService {
   syncCloudConfig(apiUrl: string, token: string): Promise<boolean>;
   setLingoTable(lingo: string): Promise<boolean>;
   getLingoTable(): Promise<string | null>;
+  updateWidgetData(remindersJson: string): Promise<boolean>;
+  getWidgetData(): Promise<string>;
 }
 
 export class RemyCaptureService implements IRemyCaptureService {
@@ -162,6 +164,28 @@ export class RemyCaptureService implements IRemyCaptureService {
       return await this.module.getLingoTable();
     } catch {
       return null;
+    }
+  }
+
+  async updateWidgetData(remindersJson: string): Promise<boolean> {
+    if (Platform.OS !== 'android' || !this.module?.updateWidgetData) {
+      return false;
+    }
+    try {
+      return await this.module.updateWidgetData(remindersJson);
+    } catch {
+      return false;
+    }
+  }
+
+  async getWidgetData(): Promise<string> {
+    if (Platform.OS !== 'android' || !this.module?.getWidgetData) {
+      return '[]';
+    }
+    try {
+      return (await this.module.getWidgetData()) || '[]';
+    } catch {
+      return '[]';
     }
   }
 }

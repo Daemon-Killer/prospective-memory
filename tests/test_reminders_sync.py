@@ -511,4 +511,64 @@ def test_permanent_database_config_resolution(tmp_path: Path, monkeypatch) -> No
     assert unhosted_dir.exists()
 
 
+def test_reminder_edit_message_type_custom_time_and_priority(tmp_path: Path, monkeypatch) -> None:
+    db = tmp_path / "edit_test.db"
+    token = "test-token"
+    monkeypatch.setattr(settings, "db_path", db)
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    monkeypatch.setattr(settings, "token", token)
 
+    client = TestClient(app)
+    headers = {"X-PMEM-TOKEN": token}
+
+    # 1. Initial reminder creation
+    initial_payload = {
+        "id": "rem-edit-1",
+        "title": "Buy milk",
+        "notes": "Low fat",
+        "dueDate": "2026-09-20T10:00:00.000Z",
+        "status": "pending",
+        "createdAt": "2026-09-19T08:00:00.000Z",
+        "updatedAt": "2026-09-19T08:00:00.000Z",
+        "armed": True,
+        "priority": "low",
+    }
+    r1 = client.post("/v1/reminders", json=initial_payload, headers=headers)
+    assert r1.status_code == 200
+    d1 = r1.json()
+    assert d1["title"] == "Buy milk"
+    assert d1["notes"] == "Low fat"
+    assert d1["dueDate"] == "2026-09-20T10:00:00.000Z"
+    assert d1["armed"] is True
+    assert d1["priority"] == "low"
+
+    # 2. Edit message, type (switch to unarmed inbox), custom time, and priority
+    edited_payload = {
+        "id": "rem-edit-1",
+        "title": "Buy oat milk & artisanal sourdough",
+        "notes": "From bakery across town; check opening hours",
+        "dueDate": "2026-09-25T16:45:00.000Z",
+        "status": "pending",
+        "createdAt": "2026-09-19T08:00:00.000Z",
+        "updatedAt": "2026-09-19T08:30:00.000Z",
+        "armed": False,
+        "priority": "high",
+    }
+    r2 = client.post("/v1/reminders", json=edited_payload, headers=headers)
+    assert r2.status_code == 200
+    d2 = r2.json()
+    assert d2["title"] == "Buy oat milk & artisanal sourdough"
+    assert d2["notes"] == "From bakery across town; check opening hours"
+    assert d2["dueDate"] == "2026-09-25T16:45:00.000Z"
+    assert d2["armed"] is False
+    assert d2["priority"] == "high"
+
+    # 3. Verify get_reminders returns the edited record
+    list_res = client.get("/v1/reminders", headers=headers)
+    assert list_res.status_code == 200
+    items = list_res.json()
+    assert len(items) == 1
+    assert items[0]["title"] == "Buy oat milk & artisanal sourdough"
+    assert items[0]["priority"] == "high"
+    assert items[0]["armed"] is False
+    assert items[0]["dueDate"] == "2026-09-25T16:45:00.000Z"

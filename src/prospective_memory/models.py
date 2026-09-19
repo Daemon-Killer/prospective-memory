@@ -83,6 +83,7 @@ class ReminderIn(BaseModel):
     armed: bool = True
     inkData: str | None = None
     culturalMetadata: str | None = None
+    priority: str | None = None
 
 
 class ReminderOut(BaseModel):
@@ -100,6 +101,7 @@ class ReminderOut(BaseModel):
     armed: bool = True
     inkData: str | None = None
     culturalMetadata: str | None = None
+    priority: str | None = None
 
 
 class ReminderSyncBatchIn(BaseModel):

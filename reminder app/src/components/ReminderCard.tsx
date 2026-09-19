@@ -26,6 +26,7 @@ export interface ReminderCardProps {
   onToggleComplete: (id: string) => void;
   onSnoozePress: (reminder: Reminder) => void;
   onDeletePress?: (id: string) => void;
+  onEditPress?: (reminder: Reminder) => void;
   currentTime?: Date;
   testID?: string;
 }
@@ -36,6 +37,7 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
   onToggleComplete,
   onSnoozePress,
   onDeletePress,
+  onEditPress,
   currentTime = new Date(),
   testID,
 }) => {
@@ -187,16 +189,51 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
             )}
           </View>
 
-          {reminder.snoozeCount > 0 && !isCompleted && (
-            <View
-              testID={`reminder-snooze-badge-${reminder.id}`}
-              style={[styles.snoozeBadge, { borderColor: themeColors.borderStrong }]}
-            >
-              <Text style={[styles.snoozeBadgeText, { color: themeColors.warning }]}>
-                SNOOZED ×{reminder.snoozeCount}
-              </Text>
-            </View>
-          )}
+          <View style={styles.badgeCluster}>
+            {reminder.priority && (
+              <View
+                testID={`reminder-priority-badge-${reminder.id}`}
+                style={[
+                  styles.priorityBadge,
+                  {
+                    borderColor:
+                      reminder.priority === 'high'
+                        ? themeColors.danger
+                        : reminder.priority === 'medium'
+                        ? themeColors.warning
+                        : themeColors.borderStrong,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.priorityBadgeText,
+                    {
+                      color:
+                        reminder.priority === 'high'
+                          ? themeColors.danger
+                          : reminder.priority === 'medium'
+                          ? themeColors.warning
+                          : themeColors.textSecondary,
+                    },
+                  ]}
+                >
+                  {reminder.priority.toUpperCase()}
+                </Text>
+              </View>
+            )}
+
+            {reminder.snoozeCount > 0 && !isCompleted && (
+              <View
+                testID={`reminder-snooze-badge-${reminder.id}`}
+                style={[styles.snoozeBadge, { borderColor: themeColors.borderStrong }]}
+              >
+                <Text style={[styles.snoozeBadgeText, { color: themeColors.warning }]}>
+                  SNOOZED ×{reminder.snoozeCount}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* Intention Title & Checkbox */}
@@ -306,6 +343,22 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
 
         {/* Action Controls */}
         <View style={styles.actionRow}>
+          {onEditPress && (
+            <TouchableOpacity
+              testID={`reminder-edit-btn-${reminder.id}`}
+              onPress={() => onEditPress(reminder)}
+              style={[
+                styles.actionButton,
+                { borderColor: themeColors.border, backgroundColor: themeColors.surfaceSubtle },
+              ]}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.actionButtonText, { color: themeColors.accent || themeColors.textPrimary }]}>
+                EDIT
+              </Text>
+            </TouchableOpacity>
+          )}
+
           {onDeletePress && (
             <TouchableOpacity
               testID={`reminder-delete-btn-${reminder.id}`}
@@ -502,6 +555,22 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.5,
     fontVariant: ['tabular-nums'],
+  },
+  badgeCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  priorityBadge: {
+    borderWidth: 1,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 0,
+  },
+  priorityBadgeText: {
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
   snoozeBadge: {
     borderWidth: 1,
