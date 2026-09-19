@@ -51,6 +51,10 @@ export interface HomeScreenProps {
   onOpenDealsRadar?: () => void;
   onOpenWatchlist?: () => void;
   onOpenBubbleSettings?: () => void;
+  autoClearPromos?: boolean;
+  onToggleAutoClearPromos?: (enabled: boolean) => void;
+  autoSnoozeNoise?: boolean;
+  onToggleAutoSnoozeNoise?: (enabled: boolean) => void;
   currentTime?: Date;
   testID?: string;
 }
@@ -71,6 +75,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onOpenDealsRadar: propOnOpenDealsRadar,
   onOpenWatchlist: propOnOpenWatchlist,
   onOpenBubbleSettings: propOnOpenBubbleSettings,
+  autoClearPromos: propAutoClearPromos,
+  onToggleAutoClearPromos: propOnToggleAutoClearPromos,
+  autoSnoozeNoise: propAutoSnoozeNoise,
+  onToggleAutoSnoozeNoise: propOnToggleAutoSnoozeNoise,
   currentTime = new Date(),
   testID = 'home-screen',
 }) => {
@@ -83,6 +91,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [watchlistVisible, setWatchlistVisible] = useState<boolean>(false);
   const [bubbleSettingsVisible, setBubbleSettingsVisible] = useState<boolean>(false);
   const [isBubbleActive, setIsBubbleActive] = useState<boolean>(false);
+
+  const [internalAutoClearPromos, setInternalAutoClearPromos] = useState<boolean>(true);
+  const [internalAutoSnoozeNoise, setInternalAutoSnoozeNoise] = useState<boolean>(false);
+
+  const autoClearPromos = propAutoClearPromos ?? internalAutoClearPromos;
+  const autoSnoozeNoise = propAutoSnoozeNoise ?? internalAutoSnoozeNoise;
 
   const [internalSuggestions, setInternalSuggestions] = useState<SensorySuggestion[]>(() =>
     sensoryStorageService.getPendingSuggestions()
@@ -117,6 +131,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       }
     });
 
+    // Fetch persistent tray preferences
+    sensoryBridge.getFilterConfig().then((cfg) => {
+      if (isMounted && cfg) {
+        if (cfg.autoClearPromos !== undefined) {
+          setInternalAutoClearPromos(cfg.autoClearPromos);
+        }
+        if (cfg.autoSnoozeNoise !== undefined) {
+          setInternalAutoSnoozeNoise(cfg.autoSnoozeNoise);
+        }
+      }
+    }).catch(() => {});
+
     const unsubSensory = sensoryStorageService.subscribe(() => {
       if (isMounted) {
         setInternalSuggestions(sensoryStorageService.getPendingSuggestions());
@@ -136,6 +162,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           await sensoryStorageService.addFromExtraction(result.actionable, payload);
         } else if (result.stream === 'deal' && result.deal) {
           await dealsStorageService.addFromExtraction(result.deal, payload);
+          // Active notification tray clearing: dismiss promotional alert once stored in Deals Radar
+          if (autoClearPromos && payload.key) {
+            await sensoryBridge.dismissNotification(payload.key);
+          }
+        } else if (result.stream === 'noise' && autoSnoozeNoise && payload.key) {
+          await sensoryBridge.snoozeNotification(payload.key, 3600000);
         }
       } catch (err) {
         console.warn('HomeScreen: Error routing live sensory notification:', err);
@@ -146,13 +178,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       routeNotification(payload);
     });
 
+    const unsubDrain = sensoryBridge.initResumeDrain(async (notifications) => {
+      for (const payload of notifications) {
+        await routeNotification(payload);
+      }
+    });
+
     return () => {
       isMounted = false;
       unsubSensory();
       unsubDeals();
       unsubBridge();
+      unsubDrain();
     };
-  }, []);
+  }, [autoClearPromos, autoSnoozeNoise]);
 
   const drainSensoryQueue = useCallback(async () => {
     try {
@@ -163,12 +202,41 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           await sensoryStorageService.addFromExtraction(result.actionable, payload);
         } else if (result.stream === 'deal' && result.deal) {
           await dealsStorageService.addFromExtraction(result.deal, payload);
+          if (autoClearPromos && payload.key) {
+            await sensoryBridge.dismissNotification(payload.key);
+          }
+        } else if (result.stream === 'noise' && autoSnoozeNoise && payload.key) {
+          await sensoryBridge.snoozeNotification(payload.key, 3600000);
         }
       }
     } catch (err) {
       console.warn('HomeScreen: Error draining sensory notifications:', err);
     }
-  }, []);
+  }, [autoClearPromos, autoSnoozeNoise]);
+
+  const handleToggleAutoClearPromos = useCallback(async () => {
+    const nextVal = !autoClearPromos;
+    if (propOnToggleAutoClearPromos) {
+      propOnToggleAutoClearPromos(nextVal);
+    } else {
+      setInternalAutoClearPromos(nextVal);
+      await sensoryBridge.setAutoClearPromos(nextVal);
+      const cfg = await sensoryBridge.getFilterConfig();
+      await sensoryBridge.updateFilterConfig({ ...cfg, autoClearPromos: nextVal });
+    }
+  }, [autoClearPromos, propOnToggleAutoClearPromos]);
+
+  const handleToggleAutoSnoozeNoise = useCallback(async () => {
+    const nextVal = !autoSnoozeNoise;
+    if (propOnToggleAutoSnoozeNoise) {
+      propOnToggleAutoSnoozeNoise(nextVal);
+    } else {
+      setInternalAutoSnoozeNoise(nextVal);
+      await sensoryBridge.setAutoSnoozeNoise(nextVal);
+      const cfg = await sensoryBridge.getFilterConfig();
+      await sensoryBridge.updateFilterConfig({ ...cfg, autoSnoozeNoise: nextVal });
+    }
+  }, [autoSnoozeNoise, propOnToggleAutoSnoozeNoise]);
 
   const handleAcceptSuggestion = useCallback(
     async (id: string) => {
@@ -458,6 +526,107 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           isBubbleActive={isBubbleActive}
         />
 
+        {/* Promotional Clutter Clearing & Deals Radar Status Banner */}
+        <View
+          testID="promo-radar-status-banner"
+          style={[
+            styles.promoRadarBanner,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.promoRadarHeaderRow}>
+            <View style={styles.promoRadarTitleCluster}>
+              <View
+                style={[
+                  styles.promoRadarSignalDot,
+                  { backgroundColor: autoClearPromos ? colors.accent : '#6B7280' },
+                ]}
+              />
+              <Text
+                testID="promo-radar-status-tag"
+                style={[
+                  styles.promoRadarTag,
+                  { color: autoClearPromos ? colors.accent : colors.textMuted },
+                ]}
+              >
+                {autoClearPromos ? 'PROMO CLEARING ACTIVE · STATUS BAR CALM' : 'PROMO AUTO-CLEAR PAUSED'}
+              </Text>
+            </View>
+
+            <View style={styles.promoRadarActionsCluster}>
+              <TouchableOpacity
+                testID="toggle-auto-clear-promos"
+                onPress={handleToggleAutoClearPromos}
+                activeOpacity={0.7}
+                style={[
+                  styles.promoToggleBtn,
+                  {
+                    borderColor: autoClearPromos ? colors.accent : colors.border,
+                    backgroundColor: autoClearPromos ? colors.accentSubtle : colors.surfaceSubtle,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Toggle auto-clear promotional notifications: currently ${autoClearPromos ? 'ON' : 'OFF'}`}
+              >
+                <Text
+                  style={[
+                    styles.promoToggleText,
+                    { color: autoClearPromos ? colors.accent : colors.textMuted },
+                  ]}
+                >
+                  AUTO-CLEAR: {autoClearPromos ? 'ON' : 'OFF'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                testID="toggle-auto-snooze-noise"
+                onPress={handleToggleAutoSnoozeNoise}
+                activeOpacity={0.7}
+                style={[
+                  styles.promoToggleBtn,
+                  {
+                    borderColor: autoSnoozeNoise ? colors.accent : colors.border,
+                    backgroundColor: autoSnoozeNoise ? colors.accentSubtle : colors.surfaceSubtle,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Toggle auto-snooze noise alerts: currently ${autoSnoozeNoise ? 'ON' : 'OFF'}`}
+              >
+                <Text
+                  style={[
+                    styles.promoToggleText,
+                    { color: autoSnoozeNoise ? colors.accent : colors.textMuted },
+                  ]}
+                >
+                  SNOOZE NOISE: {autoSnoozeNoise ? 'ON' : 'OFF'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.promoRadarBodyRow}>
+            <Text style={[styles.promoRadarDescription, { color: colors.textSecondary }]}>
+              {autoClearPromos
+                ? `Promos parsed to Deals Radar (${vouchers.length} saved) · Status bar kept distraction-free`
+                : 'Promotions will accumulate in system tray until cleared manually'}
+              {autoSnoozeNoise ? ' · Noise snoozed' : ''}
+            </Text>
+
+            <TouchableOpacity
+              testID="open-deals-radar-banner-btn"
+              onPress={handleOpenRadar}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={[styles.promoRadarLink, { color: colors.accent }]}>
+                RADAR [{vouchers.length}] →
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <SensoryInboxShelf
           suggestions={suggestions}
           onAccept={handleAcceptSuggestion}
@@ -618,6 +787,73 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 11,
     marginTop: 2,
+  },
+  promoRadarBanner: {
+    marginHorizontal: 16,
+    marginTop: 6,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderRadius: 0,
+  },
+  promoRadarHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  promoRadarTitleCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
+  },
+  promoRadarSignalDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  promoRadarTag: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+  promoRadarActionsCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  promoToggleBtn: {
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 0,
+  },
+  promoToggleText: {
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  promoRadarBodyRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  promoRadarDescription: {
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+    flex: 1,
+    marginRight: 8,
+  },
+  promoRadarLink: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
   },
 });
 

@@ -31,11 +31,12 @@ const CHAT_PACKAGES = new Set([
 ]);
 
 // Actionable Domain Patterns
-const DELIVERY_REGEX = /\b(out for delivery|arriving today|will be delivered|package arriving|driver is on the way|on the way to your address|courier out for delivery)\b/i;
-const BILL_REGEX = /\b(bill due|payment due|due date:?|amount due|pay before|last date to pay|postpaid bill|electricity bill|recharge expires|water bill|credit card bill)\b/i;
-const TRAVEL_REGEX = /\b(web check-in|flight departs|boarding begins|gate closes|train departs)\b/i;
-const RIDE_REGEX = /\b(driver .* arriving in|ride arriving|driver is arriving|cab is waiting)\b/i;
-const APPOINTMENT_REGEX = /\b(appointment scheduled|doctor appointment|dentist appointment|scheduled for|service booked)\b/i;
+const DELIVERY_REGEX = /\b(out for delivery|arriving today|will be delivered|package arriving|driver is on the way|on the way to your address|courier out for delivery|dispatched|in transit|order shipped|package has shipped|package shipped|delivery attempt|package in transit|arriving by|arriving tomorrow|expected delivery|estimated delivery|order delivered|package delivered|shipment delivered|delivered to your|ready for pickup|pickup ready|parcel ready|track delivery|track shipment)\b/i;
+const BILL_REGEX = /\b(bill due|payment due|due date:?|amount due|pay before|last date to pay|postpaid bill|electricity bill|recharge expires|recharge due|water bill|credit card bill|emi due|installment due|insurance premium due|broadband bill|gas bill|utility bill|payment reminder|bill generated|subscription renewal|renew before|renew by|rent due|rent is due|fee due|fees due|invoice due|payment pending|pending payment|payment overdue|bill overdue|minimum amount due|statement generated)\b/i;
+const TRAVEL_REGEX = /\b(web check-in|check-in is (?:now )?open|boarding (?:begins|starts|now|pass)|gate closes|flight (?:departs|departing|scheduled|delayed|on time)|train (?:departs|departing|scheduled)|pnr\b.*(?:\d{10}|confirmed|status)|train\s+\d+.*departs?|bus departs?|gate change|gate changed|flight.*delayed)\b/i;
+const RIDE_REGEX = /\b(driver .* arriving in|ride arriving|driver is arriving|cab is waiting|driver has arrived|captain is on the way)\b/i;
+const APPOINTMENT_REGEX = /\b(appointment scheduled|doctor appointment|dentist appointment|scheduled for|service booked|meeting reminder|calendar event|upcoming appointment|consultation scheduled|interview scheduled|visit scheduled|reservation confirmed|call scheduled|appointment reminder|upcoming meeting|zoom meeting|google meet|teams meeting|webex meeting|doctor visit|clinic appointment)\b/i;
+const ACTION_ITEM_REGEX = /\b(reminder:?|action required:?|action needed:?|to-do:?|don't forget to|please submit|deadline:?|please remember to|task:?|follow up on|follow-up:?|urgent:?|assignment due|task due)\b/i;
 
 const PACKAGE_MERCHANT_MAP: Record<string, string> = {
   'com.swiggy.android': 'Swiggy',
@@ -206,24 +207,40 @@ export function classifyNotification(payload: RawNotificationPayload, now: Date 
     };
   }
 
-  // 3C. Travel & Flights
+  // 3C. Travel & Flights / Trains
   if (TRAVEL_REGEX.test(combined)) {
     const dateInfo = extractDate(combined, now);
     const flightMatch = combined.match(/\b(flight\s+[A-Z0-9-]+)\b/i);
-    const targetFlight = flightMatch ? flightMatch[1] : 'flight';
-    const cleanMerchant = merchant || 'airline';
+    const trainMatch = combined.match(/\b(train\s+[A-Z0-9-]+|\b[0-9]{5}\b)\b/i);
+    const cleanMerchant = merchant || (flightMatch ? 'airline' : (trainMatch ? 'railways' : 'transit'));
+
+    let travelTitle = `Web check-in for ${cleanMerchant} ${flightMatch ? flightMatch[1] : 'flight'}`;
+    let travelVerb = 'Check in';
+    let travelTags = ['travel', 'flight'];
+
+    if (trainMatch || /train/i.test(combined)) {
+      const trainDesc = trainMatch ? trainMatch[1] : 'train';
+      travelTitle = `Board ${cleanMerchant} ${trainDesc}`;
+      travelVerb = 'Board';
+      travelTags = ['travel', 'train'];
+    } else if (!flightMatch && !/flight/i.test(combined)) {
+      travelTitle = `Board ${cleanMerchant} transit`;
+      travelVerb = 'Board';
+      travelTags = ['travel', 'transit'];
+    }
+
     const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime;
 
     return {
       stream: 'actionable',
       actionable: {
-        title: `Web check-in for ${cleanMerchant} ${targetFlight}`,
-        actionVerb: 'Check in',
+        title: travelTitle,
+        actionVerb: travelVerb,
         context: combined,
         inferredDueDate: dateInfo.date.toISOString(),
         armed: dateInfo.armed,
         category: 'travel',
-        tags: ['travel', 'flight'],
+        tags: travelTags,
         confidence: 0.9,
       },
       confidence: 0.9,
@@ -259,18 +276,68 @@ export function classifyNotification(payload: RawNotificationPayload, now: Date 
   // 3E. Appointments
   if (APPOINTMENT_REGEX.test(combined)) {
     const dateInfo = extractDate(combined, now);
+    let apptTitle = 'Attend appointment';
+    let apptVerb = 'Attend';
+    let apptTags = ['appointment'];
+
+    if (/doctor|dentist|clinic|hospital/i.test(combined)) {
+      apptTitle = merchant ? `Attend ${merchant} appointment` : 'Attend doctor appointment';
+      apptTags = ['appointment', 'health'];
+    } else if (/interview/i.test(combined)) {
+      apptTitle = merchant ? `Attend interview with ${merchant}` : 'Attend interview';
+      apptTags = ['appointment', 'work'];
+    } else if (/meeting|webinar|call/i.test(combined)) {
+      apptTitle = merchant ? `Attend ${merchant} meeting` : 'Attend meeting';
+      apptTags = ['appointment', 'meeting'];
+    } else if (/reservation/i.test(combined)) {
+      apptTitle = merchant ? `Attend reservation at ${merchant}` : 'Attend reservation';
+      apptTags = ['appointment', 'reservation'];
+    } else if (/service/i.test(combined)) {
+      apptTitle = merchant ? `Service booked: ${merchant}` : 'Attend service appointment';
+      apptTags = ['appointment', 'service'];
+    }
+
     const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime;
 
     return {
       stream: 'actionable',
       actionable: {
-        title: 'Attend appointment',
-        actionVerb: 'Attend',
+        title: apptTitle,
+        actionVerb: apptVerb,
         context: combined,
         inferredDueDate: dateInfo.date.toISOString(),
         armed: dateInfo.armed,
         category: 'appointment',
-        tags: ['appointment', 'health'],
+        tags: apptTags,
+        confidence: 0.9,
+      },
+      confidence: 0.9,
+      evaluationTimeMs: elapsed,
+    };
+  }
+
+  // 3F. General Action Items, Tasks & Reminders
+  if (ACTION_ITEM_REGEX.test(combined)) {
+    const dateInfo = extractDate(combined, now);
+    let cleanActionTitle = title || 'Action item';
+    if (title.length <= 15 && text.length > 0) {
+      const cleanText = text.replace(ACTION_ITEM_REGEX, '').replace(/^[:\s-]+/, '').trim();
+      cleanActionTitle = cleanText.length > 0 ? cleanText.slice(0, 60) : title;
+    } else {
+      cleanActionTitle = title.replace(ACTION_ITEM_REGEX, '').replace(/^[:\s-]+/, '').trim() || title;
+    }
+    const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime;
+
+    return {
+      stream: 'actionable',
+      actionable: {
+        title: cleanActionTitle,
+        actionVerb: 'Review',
+        context: combined,
+        inferredDueDate: dateInfo.date.toISOString(),
+        armed: dateInfo.armed,
+        category: 'general',
+        tags: ['action', 'task'],
         confidence: 0.9,
       },
       confidence: 0.9,

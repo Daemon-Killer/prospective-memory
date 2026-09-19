@@ -97,8 +97,8 @@ export function extractDate(text: string, now: Date = new Date()): ExtractedDate
     return { date: target, armed: true, rawCue: 'midnight' };
   }
 
-  // 7. Generic "out for delivery" without explicit time -> Defaults to 19:00:00 today
-  if (/\bout for delivery\b/i.test(text)) {
+  // 7. Generic delivery or logistics alert without explicit time -> Defaults to 19:00:00 today (or +1h if evening)
+  if (/\b(?:out for delivery|in transit|order shipped|package shipped|dispatched|arriving today|delivered|ready for pickup|pickup ready|parcel ready)\b/i.test(text)) {
     const target = new Date(now.getTime());
     target.setHours(19, 0, 0, 0);
     if (now.getTime() >= target.getTime()) {

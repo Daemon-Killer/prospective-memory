@@ -57,6 +57,8 @@ export const DEFAULT_FILTER_CONFIG: SensoryFilterConfig = {
   enableOtpQuarantine: true,
   ignoreOngoing: true,
   enabled: true,
+  autoClearPromos: true,
+  autoSnoozeNoise: false,
 };
 
 /**
@@ -91,6 +93,8 @@ export function validateFilterConfig(raw: unknown): SensoryFilterConfig {
     enableOtpQuarantine: obj.enableOtpQuarantine ?? true,
     ignoreOngoing: obj.ignoreOngoing ?? true,
     enabled: obj.enabled ?? true,
+    autoClearPromos: obj.autoClearPromos !== undefined ? Boolean(obj.autoClearPromos) : true,
+    autoSnoozeNoise: obj.autoSnoozeNoise !== undefined ? Boolean(obj.autoSnoozeNoise) : false,
   };
 }
 

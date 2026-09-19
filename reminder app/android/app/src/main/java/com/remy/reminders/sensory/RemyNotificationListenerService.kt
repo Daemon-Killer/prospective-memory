@@ -22,12 +22,16 @@ class RemyNotificationListenerService : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         isConnected = true
+        instance = this
         Log.d(TAG, "RemyNotificationListenerService connected to Android Notification System.")
     }
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         isConnected = false
+        if (instance == this) {
+            instance = null
+        }
         Log.d(TAG, "RemyNotificationListenerService disconnected from Android Notification System.")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             try {
@@ -35,6 +39,14 @@ class RemyNotificationListenerService : NotificationListenerService() {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to request rebind for NotificationListenerService", e)
             }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        isConnected = false
+        if (instance == this) {
+            instance = null
         }
     }
 
@@ -95,6 +107,7 @@ class RemyNotificationListenerService : NotificationListenerService() {
 
         val payload = JSONObject().apply {
             put("id", id)
+            put("key", sbn.key ?: "")
             put("packageName", packageName)
             put("title", title)
             put("text", text)
@@ -194,10 +207,15 @@ class RemyNotificationListenerService : NotificationListenerService() {
         const val PREF_FILTER_CONFIG = "remy_filter_config"
         const val PREF_QUARANTINE_COUNT = "remy_quarantine_count"
         const val PREF_LAST_QUARANTINED_AT = "remy_last_quarantined_at"
+        const val PREF_AUTO_CLEAR_PROMOS = "remy_auto_clear_promos"
+        const val PREF_AUTO_SNOOZE_NOISE = "remy_auto_snooze_noise"
         const val MAX_QUEUE_SIZE = 100
 
         @Volatile
         var isConnected: Boolean = false
+
+        @Volatile
+        var instance: RemyNotificationListenerService? = null
 
         val QUEUE_LOCK = Any()
 
@@ -215,5 +233,87 @@ class RemyNotificationListenerService : NotificationListenerService() {
             "com.google.android.deskclock",
             "com.sec.android.app.clockpackage"
         )
+
+        /**
+         * Dismisses a specific status bar notification by its key.
+         */
+        fun dismissNotification(key: String): Boolean {
+            if (key.isBlank()) return false
+            val service = instance
+            if (service == null) {
+                Log.w(TAG, "Cannot dismiss notification ($key): listener service is not connected")
+                return false
+            }
+            return try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    service.cancelNotification(key)
+                }
+                Log.i(TAG, "Dismissed notification from status bar: $key")
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to dismiss notification ($key)", e)
+                false
+            }
+        }
+
+        /**
+         * Snoozes a specific status bar notification by its key for the given duration in ms.
+         * Falls back to cancellation on API < 26.
+         */
+        fun snoozeNotification(key: String, durationMs: Long): Boolean {
+            if (key.isBlank()) return false
+            val service = instance
+            if (service == null) {
+                Log.w(TAG, "Cannot snooze notification ($key): listener service is not connected")
+                return false
+            }
+            return try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    service.snoozeNotification(key, durationMs)
+                    Log.i(TAG, "Snoozed notification $key for ${durationMs}ms")
+                    true
+                } else {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        service.cancelNotification(key)
+                    }
+                    Log.i(TAG, "Snooze fallback (cancel) for notification: $key")
+                    true
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to snooze notification ($key)", e)
+                false
+            }
+        }
+
+        /**
+         * Clears all dismissible notifications from the status bar tray.
+         */
+        fun dismissAllNotifications(): Boolean {
+            val service = instance
+            if (service == null) {
+                Log.w(TAG, "Cannot dismiss all notifications: listener service is not connected")
+                return false
+            }
+            return try {
+                service.cancelAllNotifications()
+                Log.i(TAG, "Dismissed all notifications from status bar")
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to dismiss all notifications", e)
+                false
+            }
+        }
+
+        /**
+         * Returns active status bar notification keys.
+         */
+        fun getActiveNotificationKeys(): List<String> {
+            val service = instance ?: return emptyList()
+            return try {
+                service.activeNotifications?.mapNotNull { it.key } ?: emptyList()
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
     }
 }

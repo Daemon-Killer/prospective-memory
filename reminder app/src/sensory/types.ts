@@ -11,6 +11,7 @@
 
 export interface RawNotificationPayload {
   id: string;              // UUID v4 generated at native/bridge ingress
+  key?: string;            // Android StatusBarNotification key for active tray management
   packageName: string;     // e.g. "com.swiggy.android", "in.amazon.mShop.android.shopping"
   title: string;           // Status-bar notification title
   text: string;            // Notification body text
@@ -108,6 +109,7 @@ export type SuggestionStatus = 'pending' | 'accepted' | 'dismissed';
 
 export interface SensorySuggestion {
   id: string;              // UUID v4
+  key?: string;            // Android StatusBarNotification key
   title: string;           // Actionable title
   actionVerb: string;      // Action verb
   originalText: string;    // Redacted notification text
@@ -161,6 +163,8 @@ export interface SensoryFilterConfig {
   enableOtpQuarantine: boolean;
   ignoreOngoing: boolean;
   enabled?: boolean;
+  autoClearPromos?: boolean;
+  autoSnoozeNoise?: boolean;
 }
 
 // ==========================================
@@ -189,4 +193,36 @@ export interface IDealsStorageService {
   getVouchers(): VoucherItem[];
   recordCopy(id: string): Promise<void>;
   purgeExpired(): Promise<void>;
+}
+
+export interface QuarantineStats {
+  quarantinedCount: number;
+  lastQuarantinedAt: number | null;
+}
+
+export interface ISensoryBridge {
+  isPermissionGranted(): Promise<boolean>;
+  requestPermission(): Promise<boolean>;
+  getPendingNotifications(): Promise<RawNotificationPayload[]>;
+  clearPendingNotifications(): Promise<boolean>;
+  drainPendingNotifications(): Promise<RawNotificationPayload[]>;
+  getFilterConfig(): Promise<SensoryFilterConfig>;
+  updateFilterConfig(config: SensoryFilterConfig): Promise<boolean>;
+  getQuarantineStats(): Promise<QuarantineStats>;
+  clearQuarantineStats(): Promise<boolean>;
+  simulateNotification(payload?: Partial<RawNotificationPayload> | null): Promise<{ status: string; reason?: string }>;
+  onNotification(listener: (notification: RawNotificationPayload) => void): () => void;
+  initResumeDrain(callback: (notifications: RawNotificationPayload[]) => void): () => void;
+
+  // Active Tray Management
+  dismissNotification(key: string): Promise<boolean>;
+  snoozeNotification(key: string, durationMs?: number): Promise<boolean>;
+  dismissAllNotifications(): Promise<boolean>;
+  setAutoClearPromos(enabled: boolean): Promise<boolean>;
+  getAutoClearPromos(): Promise<boolean>;
+  setAutoSnoozeNoise(enabled: boolean): Promise<boolean>;
+  getAutoSnoozeNoise(): Promise<boolean>;
+  getMockDismissedKeys?(): string[];
+  getMockSnoozedKeys?(): Array<{ key: string; durationMs: number }>;
+  clearMockTray?(): void;
 }

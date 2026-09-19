@@ -226,6 +226,116 @@ class RemySensoryModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    @ReactMethod
+    fun dismissNotification(key: String?, promise: Promise) {
+        try {
+            if (key.isNullOrBlank()) {
+                promise.resolve(false)
+                return
+            }
+            val success = RemyNotificationListenerService.dismissNotification(key)
+            promise.resolve(success)
+        } catch (e: Exception) {
+            promise.reject("ERR_DISMISS_NOTIFICATION", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun snoozeNotification(key: String?, durationMs: Double, promise: Promise) {
+        try {
+            if (key.isNullOrBlank()) {
+                promise.resolve(false)
+                return
+            }
+            val success = RemyNotificationListenerService.snoozeNotification(key, durationMs.toLong())
+            promise.resolve(success)
+        } catch (e: Exception) {
+            promise.reject("ERR_SNOOZE_NOTIFICATION", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun dismissAllNotifications(promise: Promise) {
+        try {
+            val success = RemyNotificationListenerService.dismissAllNotifications()
+            promise.resolve(success)
+        } catch (e: Exception) {
+            promise.reject("ERR_DISMISS_ALL_NOTIFICATIONS", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun getActiveNotificationKeys(promise: Promise) {
+        try {
+            val keys = RemyNotificationListenerService.getActiveNotificationKeys()
+            val array = Arguments.createArray()
+            keys.forEach { array.pushString(it) }
+            promise.resolve(array)
+        } catch (e: Exception) {
+            promise.reject("ERR_GET_ACTIVE_NOTIFICATIONS", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun setAutoClearPromos(enabled: Boolean, promise: Promise) {
+        try {
+            val prefs = reactContext.getSharedPreferences(
+                RemyNotificationListenerService.PREFS_NAME,
+                Context.MODE_PRIVATE
+            )
+            prefs.edit()
+                .putBoolean(RemyNotificationListenerService.PREF_AUTO_CLEAR_PROMOS, enabled)
+                .apply()
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("ERR_SET_AUTO_CLEAR_PROMOS", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun getAutoClearPromos(promise: Promise) {
+        try {
+            val prefs = reactContext.getSharedPreferences(
+                RemyNotificationListenerService.PREFS_NAME,
+                Context.MODE_PRIVATE
+            )
+            val enabled = prefs.getBoolean(RemyNotificationListenerService.PREF_AUTO_CLEAR_PROMOS, true)
+            promise.resolve(enabled)
+        } catch (e: Exception) {
+            promise.reject("ERR_GET_AUTO_CLEAR_PROMOS", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun setAutoSnoozeNoise(enabled: Boolean, promise: Promise) {
+        try {
+            val prefs = reactContext.getSharedPreferences(
+                RemyNotificationListenerService.PREFS_NAME,
+                Context.MODE_PRIVATE
+            )
+            prefs.edit()
+                .putBoolean(RemyNotificationListenerService.PREF_AUTO_SNOOZE_NOISE, enabled)
+                .apply()
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("ERR_SET_AUTO_SNOOZE_NOISE", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun getAutoSnoozeNoise(promise: Promise) {
+        try {
+            val prefs = reactContext.getSharedPreferences(
+                RemyNotificationListenerService.PREFS_NAME,
+                Context.MODE_PRIVATE
+            )
+            val enabled = prefs.getBoolean(RemyNotificationListenerService.PREF_AUTO_SNOOZE_NOISE, false)
+            promise.resolve(enabled)
+        } catch (e: Exception) {
+            promise.reject("ERR_GET_AUTO_SNOOZE_NOISE", e.message)
+        }
+    }
+
     // Required by React Native NativeEventEmitter
     @ReactMethod
     fun addListener(eventName: String) {

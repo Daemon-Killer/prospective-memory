@@ -112,6 +112,7 @@ export class SensoryStorageService implements ISensoryStorageService {
 
               const suggestion: SensorySuggestion = {
                 id: String(item.id),
+                key: item.key ? String(item.key) : undefined,
                 title: String(item.title).trim(),
                 actionVerb: item.actionVerb ? String(item.actionVerb).trim() : 'Review',
                 originalText: item.originalText ? String(item.originalText) : '',
@@ -225,11 +226,13 @@ export class SensoryStorageService implements ISensoryStorageService {
 
     const nowIso = new Date().toISOString();
     const id = input.id || existingMatch?.id || createUUID();
+    const key = input.key || existingMatch?.key;
     const createdAt = input.createdAt ? (parseSafeISO(input.createdAt) ?? nowIso) : (existingMatch?.createdAt ?? nowIso);
     const isoDueDate = parseSafeISO(input.inferredDueDate) || existingMatch?.inferredDueDate || nowIso;
 
     const suggestion: SensorySuggestion = {
       id,
+      key,
       title: trimmedTitle,
       actionVerb: input.actionVerb?.trim() || existingMatch?.actionVerb || 'Review',
       originalText: input.originalText !== undefined ? String(input.originalText) : (existingMatch?.originalText ?? ''),
@@ -262,6 +265,7 @@ export class SensoryStorageService implements ISensoryStorageService {
     const rawText = raw.text || raw.title || '';
     return this.addSuggestion({
       id: raw.id || createUUID(),
+      key: raw.key,
       title: extraction.title,
       actionVerb: extraction.actionVerb,
       originalText: rawText,

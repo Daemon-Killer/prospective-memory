@@ -93,6 +93,70 @@ describe('Remy Notification Sensory Engine - Sensory Bridge', () => {
     });
   });
 
+  describe('Active Notification Tray Management', () => {
+    beforeEach(() => {
+      if (typeof sensoryBridge.clearMockTray === 'function') {
+        sensoryBridge.clearMockTray();
+      }
+    });
+
+    test('dismissNotification records dismissed key', async () => {
+      const result = await sensoryBridge.dismissNotification('0|com.swiggy.android|101|null|10001');
+      expect(result).toBe(true);
+      if (sensoryBridge.getMockDismissedKeys) {
+        expect(sensoryBridge.getMockDismissedKeys()).toContain('0|com.swiggy.android|101|null|10001');
+      }
+    });
+
+    test('snoozeNotification records snoozed key with durationMs', async () => {
+      const result = await sensoryBridge.snoozeNotification('0|com.zomato.android|102|null|10002', 1800000);
+      expect(result).toBe(true);
+      if (sensoryBridge.getMockSnoozedKeys) {
+        const snoozed = sensoryBridge.getMockSnoozedKeys();
+        expect(snoozed).toEqual(
+          expect.arrayContaining([
+            { key: '0|com.zomato.android|102|null|10002', durationMs: 1800000 },
+          ])
+        );
+      }
+    });
+
+    test('dismissAllNotifications clears all status bar notifications', async () => {
+      const result = await sensoryBridge.dismissAllNotifications();
+      expect(result).toBe(true);
+      if (sensoryBridge.getMockDismissedKeys) {
+        expect(sensoryBridge.getMockDismissedKeys()).toContain('*all*');
+      }
+    });
+
+    test('setAutoClearPromos and getAutoClearPromos toggle preferences', async () => {
+      await sensoryBridge.setAutoClearPromos(false);
+      expect(await sensoryBridge.getAutoClearPromos()).toBe(false);
+
+      await sensoryBridge.setAutoClearPromos(true);
+      expect(await sensoryBridge.getAutoClearPromos()).toBe(true);
+    });
+
+    test('setAutoSnoozeNoise and getAutoSnoozeNoise toggle preferences', async () => {
+      await sensoryBridge.setAutoSnoozeNoise(true);
+      expect(await sensoryBridge.getAutoSnoozeNoise()).toBe(true);
+
+      await sensoryBridge.setAutoSnoozeNoise(false);
+      expect(await sensoryBridge.getAutoSnoozeNoise()).toBe(false);
+    });
+
+    test('simulateNotification attaches notification key if omitted', async () => {
+      await sensoryBridge.simulateNotification({
+        title: 'Deal Alert',
+        text: '50% off with DEAL50',
+      });
+      const pending = await sensoryBridge.getPendingNotifications();
+      expect(pending.length).toBeGreaterThan(0);
+      expect(pending[0].key).toBeDefined();
+      expect(typeof pending[0].key).toBe('string');
+    });
+  });
+
   describe('Event Listeners & Lifecycle Hooks', () => {
     test('onNotification listener receives live emitted notifications and unsubscribes cleanly', async () => {
       const received: RawNotificationPayload[] = [];

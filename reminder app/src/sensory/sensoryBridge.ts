@@ -4,29 +4,9 @@ import {
   DEFAULT_FILTER_CONFIG,
   validateFilterConfig,
 } from './sensoryFilterConfig';
-import { RawNotificationPayload } from './types';
+import { RawNotificationPayload, QuarantineStats, ISensoryBridge } from './types';
 
-export { RawNotificationPayload };
-
-export interface QuarantineStats {
-  quarantinedCount: number;
-  lastQuarantinedAt: number | null;
-}
-
-export interface ISensoryBridge {
-  isPermissionGranted(): Promise<boolean>;
-  requestPermission(): Promise<boolean>;
-  getPendingNotifications(): Promise<RawNotificationPayload[]>;
-  clearPendingNotifications(): Promise<boolean>;
-  drainPendingNotifications(): Promise<RawNotificationPayload[]>;
-  getFilterConfig(): Promise<SensoryFilterConfig>;
-  updateFilterConfig(config: SensoryFilterConfig): Promise<boolean>;
-  getQuarantineStats(): Promise<QuarantineStats>;
-  clearQuarantineStats(): Promise<boolean>;
-  simulateNotification(payload?: Partial<RawNotificationPayload> | null): Promise<{ status: string; reason?: string }>;
-  onNotification(listener: (notification: RawNotificationPayload) => void): () => void;
-  initResumeDrain(callback: (notifications: RawNotificationPayload[]) => void): () => void;
-}
+export { RawNotificationPayload, QuarantineStats, ISensoryBridge };
 
 const EVENT_NOTIFICATION_CAPTURED = 'onNotificationCaptured';
 
@@ -36,6 +16,10 @@ export class SensoryBridgeService implements ISensoryBridge {
   private mockQuarantineStats: QuarantineStats = { quarantinedCount: 0, lastQuarantinedAt: null };
   private mockFilterConfig: SensoryFilterConfig = { ...DEFAULT_FILTER_CONFIG };
   private mockListeners: Set<(n: RawNotificationPayload) => void> = new Set();
+  private mockDismissedKeys: string[] = [];
+  private mockSnoozedKeys: Array<{ key: string; durationMs: number }> = [];
+  private mockAutoClearPromos: boolean = true;
+  private mockAutoSnoozeNoise: boolean = false;
 
   constructor() {
     if (Platform.OS === 'android' && NativeModules?.RemySensoryModule) {
@@ -117,22 +101,43 @@ export class SensoryBridgeService implements ISensoryBridge {
 
   async getFilterConfig(): Promise<SensoryFilterConfig> {
     if (Platform.OS !== 'android' || !this.module?.getFilterConfig) {
-      return { ...this.mockFilterConfig };
+      return {
+        ...this.mockFilterConfig,
+        autoClearPromos: this.mockAutoClearPromos,
+        autoSnoozeNoise: this.mockAutoSnoozeNoise,
+      };
     }
     try {
       const res = await this.module.getFilterConfig();
-      if (!res) return { ...DEFAULT_FILTER_CONFIG };
-      const parsed = typeof res === 'string' ? JSON.parse(res) : res;
-      return validateFilterConfig(parsed);
+      const parsed = res ? (typeof res === 'string' ? JSON.parse(res) : res) : {};
+      const validated = validateFilterConfig(parsed);
+      const autoClear = await this.getAutoClearPromos();
+      const autoSnooze = await this.getAutoSnoozeNoise();
+      return {
+        ...validated,
+        autoClearPromos: autoClear,
+        autoSnoozeNoise: autoSnooze,
+      };
     } catch {
-      return { ...DEFAULT_FILTER_CONFIG };
+      return {
+        ...DEFAULT_FILTER_CONFIG,
+        autoClearPromos: await this.getAutoClearPromos(),
+        autoSnoozeNoise: await this.getAutoSnoozeNoise(),
+      };
     }
   }
 
   async updateFilterConfig(config: SensoryFilterConfig): Promise<boolean> {
     const validated = validateFilterConfig(config);
+    this.mockFilterConfig = validated;
+    if (validated.autoClearPromos !== undefined) {
+      this.mockAutoClearPromos = validated.autoClearPromos;
+    }
+    if (validated.autoSnoozeNoise !== undefined) {
+      this.mockAutoSnoozeNoise = validated.autoSnoozeNoise;
+    }
+
     if (Platform.OS !== 'android' || !this.module?.updateFilterConfig) {
-      this.mockFilterConfig = validated;
       return true;
     }
     try {
@@ -173,8 +178,10 @@ export class SensoryBridgeService implements ISensoryBridge {
     payload?: Partial<RawNotificationPayload> | null
   ): Promise<{ status: string; reason?: string }> {
     const safePayload = (payload && typeof payload === 'object') ? payload : {};
+    const id = safePayload.id ? String(safePayload.id) : `sim-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const fullPayload: RawNotificationPayload = {
-      id: safePayload.id ? String(safePayload.id) : `sim-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      id,
+      key: safePayload.key ? String(safePayload.key) : `key-${id}`,
       packageName: safePayload.packageName ? String(safePayload.packageName) : 'com.simulation.alert',
       title: safePayload.title !== undefined && safePayload.title !== null
         ? (typeof safePayload.title === 'string' ? safePayload.title : String(safePayload.title))
@@ -260,6 +267,126 @@ export class SensoryBridgeService implements ISensoryBridge {
     return () => {
       subscription.remove();
     };
+  }
+
+  /**
+   * Actively cancels / dismisses a notification from the Android status bar tray.
+   */
+  async dismissNotification(key: string): Promise<boolean> {
+    if (!key) return false;
+    if (Platform.OS !== 'android' || !this.module?.dismissNotification) {
+      this.mockDismissedKeys.push(key);
+      return true;
+    }
+    try {
+      return await this.module.dismissNotification(key);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Snoozes a notification from the Android status bar tray for durationMs (default: 1 hour).
+   */
+  async snoozeNotification(key: string, durationMs: number = 3600000): Promise<boolean> {
+    if (!key) return false;
+    if (Platform.OS !== 'android' || !this.module?.snoozeNotification) {
+      this.mockSnoozedKeys.push({ key, durationMs });
+      return true;
+    }
+    try {
+      return await this.module.snoozeNotification(key, durationMs);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Dismisses all notifications from the status bar tray.
+   */
+  async dismissAllNotifications(): Promise<boolean> {
+    if (Platform.OS !== 'android' || !this.module?.dismissAllNotifications) {
+      this.mockDismissedKeys.push('*all*');
+      return true;
+    }
+    try {
+      return await this.module.dismissAllNotifications();
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Enables or disables auto-clearing promotional notifications once stored to Deals Radar.
+   */
+  async setAutoClearPromos(enabled: boolean): Promise<boolean> {
+    this.mockAutoClearPromos = enabled;
+    this.mockFilterConfig = { ...this.mockFilterConfig, autoClearPromos: enabled };
+    if (Platform.OS !== 'android' || !this.module?.setAutoClearPromos) {
+      return true;
+    }
+    try {
+      return await this.module.setAutoClearPromos(enabled);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Checks whether auto-clearing promotional notifications is enabled.
+   */
+  async getAutoClearPromos(): Promise<boolean> {
+    if (Platform.OS !== 'android' || !this.module?.getAutoClearPromos) {
+      return this.mockAutoClearPromos;
+    }
+    try {
+      return await this.module.getAutoClearPromos();
+    } catch {
+      return this.mockAutoClearPromos;
+    }
+  }
+
+  /**
+   * Enables or disables auto-snoozing noise alerts.
+   */
+  async setAutoSnoozeNoise(enabled: boolean): Promise<boolean> {
+    this.mockAutoSnoozeNoise = enabled;
+    this.mockFilterConfig = { ...this.mockFilterConfig, autoSnoozeNoise: enabled };
+    if (Platform.OS !== 'android' || !this.module?.setAutoSnoozeNoise) {
+      return true;
+    }
+    try {
+      return await this.module.setAutoSnoozeNoise(enabled);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Checks whether auto-snoozing noise alerts is enabled.
+   */
+  async getAutoSnoozeNoise(): Promise<boolean> {
+    if (Platform.OS !== 'android' || !this.module?.getAutoSnoozeNoise) {
+      return this.mockAutoSnoozeNoise;
+    }
+    try {
+      return await this.module.getAutoSnoozeNoise();
+    } catch {
+      return this.mockAutoSnoozeNoise;
+    }
+  }
+
+  getMockDismissedKeys(): string[] {
+    return [...this.mockDismissedKeys];
+  }
+
+  getMockSnoozedKeys(): Array<{ key: string; durationMs: number }> {
+    return [...this.mockSnoozedKeys];
+  }
+
+  clearMockTray(): void {
+    this.mockDismissedKeys = [];
+    this.mockSnoozedKeys = [];
   }
 }
 
