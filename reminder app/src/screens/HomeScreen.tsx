@@ -24,8 +24,9 @@ import { SnoozeModal } from '../components/SnoozeModal';
 import { EditReminderModal } from '../components/EditReminderModal';
 import { BubbleSettingsModal } from '../components/BubbleSettingsModal';
 import { Reminder, SnoozePreset, CulturalMetadata, UpdateReminderInput } from '../types/reminder';
-import { CapturePreset, compileMultiLineCapture, getStoredLingo } from '../utils/captureCompiler';
+import { CapturePreset, compileMultiLineCapture, getStoredLingo, MusicDraft } from '../utils/captureCompiler';
 import { getWeekendWatchlistCue } from '../utils/watchlistParser';
+import { audioService, AudioPlaybackState } from '../services/audioService';
 
 export interface HomeScreenProps {
   reminders?: Reminder[];
@@ -37,6 +38,8 @@ export interface HomeScreenProps {
     armed?: boolean;
     inkData?: string | null;
     culturalMetadata?: CulturalMetadata | null;
+    tags?: string[];
+    musicDraft?: MusicDraft;
   }) => Promise<void> | void;
   onToggleComplete?: (id: string) => Promise<void> | void;
   onSnoozeReminder?: (reminder: Reminder) => void;
@@ -107,6 +110,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const suggestions = propSuggestions ?? internalSuggestions;
   const vouchers = propVouchers ?? internalVouchers;
+
+  const [audioState, setAudioState] = useState<AudioPlaybackState>(() => audioService.getState());
+
+  useEffect(() => {
+    const unsub = audioService.subscribe((s) => {
+      setAudioState(s);
+    });
+    void audioService.syncWithNative().catch(() => {});
+    return unsub;
+  }, []);
+
+  const handlePlayMusic = useCallback(async (query: string) => {
+    await audioService.play(query);
+  }, []);
 
   // Check bubble running state on mount
   useEffect(() => {
@@ -310,6 +327,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       preset?: CapturePreset;
       armed?: boolean;
       inkData?: string | null;
+      tags?: string[];
+      musicDraft?: MusicDraft;
     }) => {
       if (propOnCreate) {
         await propOnCreate(input);
@@ -414,6 +433,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       if (nextState === 'active' && isMounted) {
         processIngress();
         drainSensoryQueue();
+        void audioService.syncWithNative().catch(() => {});
       }
     });
 
@@ -666,8 +686,96 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           />
         </View>
 
+        {/* Minimal Swiss Void Mini-Player Strip */}
+        {audioState.currentTrack && (
+          <View
+            testID="mini-player-strip"
+            style={[
+              styles.miniPlayerStrip,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.borderStrong,
+              },
+            ]}
+          >
+            <View style={styles.miniPlayerTrackInfo}>
+              <View style={styles.miniPlayerStatusCluster}>
+                <View
+                  style={[
+                    styles.miniPlayerDot,
+                    { backgroundColor: audioState.isPlaying ? '#10B981' : colors.textMuted },
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.miniPlayerStatusTag,
+                    { color: audioState.isPlaying ? '#10B981' : colors.textMuted },
+                  ]}
+                >
+                  {audioState.isPlaying ? 'STREAMING' : 'PAUSED'}
+                </Text>
+              </View>
+              <Text
+                testID="mini-player-title"
+                numberOfLines={1}
+                style={[styles.miniPlayerTitle, { color: colors.textPrimary }]}
+              >
+                {audioState.currentTrack.title}
+              </Text>
+              <Text
+                testID="mini-player-artist"
+                numberOfLines={1}
+                style={[styles.miniPlayerArtist, { color: colors.textSecondary }]}
+              >
+                {audioState.currentTrack.artist}
+              </Text>
+            </View>
+
+            <View style={styles.miniPlayerControls}>
+              <TouchableOpacity
+                testID="mini-player-toggle"
+                onPress={() => audioService.toggle()}
+                activeOpacity={0.7}
+                style={[
+                  styles.miniPlayerBtn,
+                  {
+                    borderColor: colors.textPrimary,
+                    backgroundColor: colors.surfaceSubtle,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={audioState.isPlaying ? 'Pause music' : 'Resume music'}
+              >
+                <Text style={[styles.miniPlayerBtnText, { color: colors.textPrimary }]}>
+                  {audioState.isPlaying ? '⏸' : '▶'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                testID="mini-player-stop"
+                onPress={() => audioService.stop()}
+                activeOpacity={0.7}
+                style={[
+                  styles.miniPlayerBtn,
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: colors.surfaceSubtle,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Stop music"
+              >
+                <Text style={[styles.miniPlayerBtnText, { color: colors.textSecondary }]}>
+                  ■
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         <QuickCaptureBar
           onCreateReminder={handleCreateReminder}
+          onPlayMusic={handlePlayMusic}
           themeColors={colors}
           showInkCapture={false}
         />
@@ -854,6 +962,66 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.8,
+  },
+  miniPlayerStrip: {
+    marginHorizontal: 16,
+    marginBottom: 4,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 0,
+  },
+  miniPlayerTrackInfo: {
+    flex: 1,
+    marginRight: 10,
+  },
+  miniPlayerStatusCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 2,
+  },
+  miniPlayerDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  miniPlayerStatusTag: {
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+    fontVariant: ['tabular-nums'],
+  },
+  miniPlayerTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  miniPlayerArtist: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  miniPlayerControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  miniPlayerBtn: {
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 0,
+    minWidth: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniPlayerBtnText: {
+    fontSize: 12,
+    fontWeight: '900',
   },
 });
 

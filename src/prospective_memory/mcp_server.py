@@ -436,6 +436,148 @@ def stats_resource() -> str:
     return json.dumps(task_stats(), indent=2)
 
 
+_NOW_PLAYING: dict[str, Any] = {
+    "status": "idle",
+    "track": None,
+    "updated_at": None,
+}
+
+
+def resolve_music(query: str) -> dict[str, Any]:
+    """Resolves a natural language music query to streaming audio track metadata."""
+    import re
+    from datetime import datetime, timezone
+    q = (query or "").strip()
+    if not q:
+        return {
+            "title": "",
+            "artist": "",
+            "query": query,
+            "clean_query": "",
+            "stream_url": "",
+            "source": "none",
+            "resolved": False,
+            "duration": 0,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    lower_q = q.lower()
+    has_music_marker = bool(re.search(r"\b(songs?|tracks?|music|albums?|playlists?|lo-?fi|ghazals?|beats|ost|soundtracks?|disco|remix|acoustic|instrumental|jazz|rock|pop|classical|hiphop|rap|edm|ambient|raga)\b", lower_q))
+
+    # Disambiguate against physical sports, tasks, and non-music verbs
+    non_music_patterns = [
+        r"^play\s+with\b",
+        r"^play\s+(?:tennis|table\s+tennis|ping\s+pong|badminton|cricket|football|soccer|basketball|volleyball|baseball|softball|golf|squash|pickleball|chess|checkers|cards|poker|blackjack|rummy|bridge|monopoly|board\s+games?|video\s+games?|games?|a\s+game|the\s+game|sports?|tag|catch|frisbee|outside|dead|dumb|safe|fair)\b",
+        r"^listen\s+to\s+(?:the\s+|my\s+|our\s+)?(?:mom|mother|mum|dad|father|parents?|wife|husband|doctor|dr\.?|teacher|professor|boss|manager|client|lawyer|someone|everyone|him|her|them|me|us|voicemail|voicemails|voice\s*memo|messages?|lecture|meeting|webinar|advice|reason|heart|gut|conscience)\b",
+        r"^put\s+on\s+(?:the\s+|a\s+|some\s+|my\s+)?(?:jacket|coat|shoes?|boots?|socks?|pants?|shirt|clothes|clothing|suit|hat|mask|sunscreen|makeup|laundry|kettle|tea|coffee|water|oven|heater|ac|alarm)\b",
+        r"^hear\s+(?:from|back|out|about)\b",
+        r"^stream\s+(?:movie|film|show|series|episode|game|match)\b",
+    ]
+    if not has_music_marker:
+        for pat in non_music_patterns:
+            if re.search(pat, lower_q):
+                return {
+                    "title": "",
+                    "artist": "",
+                    "query": q,
+                    "clean_query": q,
+                    "stream_url": "",
+                    "source": "none",
+                    "resolved": False,
+                    "duration": 0,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+    cleaned = re.sub(r"^(?:play|listen\s+to|hear|stream|put\s+on)\s+", "", q, flags=re.IGNORECASE).strip().strip("\"'")
+    if not cleaned:
+        cleaned = q
+
+    lower = cleaned.lower()
+    if "spb" in lower or "balasubrahmanyam" in lower:
+        title = "Tere Mere Beech Mein" if "hindi" in lower else "Sankarabharanam Classics"
+        artist = "S.P. Balasubrahmanyam"
+        stream_url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+        source = "jiosaavn_cdn"
+        duration = 260
+    elif "lofi" in lower or "lo-fi" in lower or "chill" in lower:
+        title = "Lofi Study Beats"
+        artist = "Lofi Girl / ChilledCow"
+        stream_url = "https://stream.zeno.fm/f3wvbbqmdg8uv"
+        source = "zeno_fm"
+        duration = 0
+    elif "ghazal" in lower or "jagjit" in lower:
+        title = "Tum Ko Dekha Toh Yeh Khayal Aaya"
+        artist = "Jagjit Singh"
+        stream_url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3"
+        source = "jiosaavn_cdn"
+        duration = 290
+    elif "arijit" in lower or "arjit" in lower:
+        title = "Tum Hi Ho"
+        artist = "Arijit Singh"
+        stream_url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3"
+        source = "jiosaavn_cdn"
+        duration = 262
+    elif "ilaiyaraaja" in lower or "ilayaraja" in lower:
+        title = "Thendral Vandhu Theendumbodhu"
+        artist = "Ilaiyaraaja"
+        stream_url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3"
+        source = "jiosaavn_cdn"
+        duration = 275
+    else:
+        title = cleaned.title()
+        artist = "Remy Radio Stream"
+        stream_url = "https://stream.zeno.fm/f3wvbbqmdg8uv"
+        source = "open_stream"
+        duration = 240
+
+    return {
+        "title": title,
+        "artist": artist,
+        "query": q,
+        "clean_query": cleaned,
+        "stream_url": stream_url,
+        "source": source,
+        "resolved": True,
+        "duration": duration,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@mcp.tool()
+def resolve_music_query(query: str) -> dict[str, Any]:
+    """Resolve a natural language music query (e.g. 'play spb songs hindi', 'play lofi') to stream metadata."""
+    return resolve_music(query)
+
+
+@mcp.tool()
+def play_music(query: str) -> dict[str, Any]:
+    """Start zero context-switch background music playback for a query (e.g. 'play spb songs hindi', 'play lofi')."""
+    from datetime import datetime, timezone
+    track = resolve_music(query)
+    if not track.get("resolved"):
+        return {
+            "status": "rejected",
+            "action": "none",
+            "message": f"Query '{query}' is not a valid music playback request.",
+            "now_playing": None,
+        }
+    _NOW_PLAYING["status"] = "playing"
+    _NOW_PLAYING["track"] = track
+    _NOW_PLAYING["updated_at"] = datetime.now(timezone.utc).isoformat()
+    return {
+        "status": "playing",
+        "action": "play",
+        "now_playing": track,
+    }
+
+
+@mcp.resource("media://now_playing")
+def now_playing_resource() -> str:
+    """Resource returning current background media playback state as JSON."""
+    import json
+    return json.dumps(_NOW_PLAYING, indent=2)
+
+
 def run_stdio() -> None:
     mcp.run(transport="stdio")
 

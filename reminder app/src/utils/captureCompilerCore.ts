@@ -30,6 +30,13 @@ export interface LingoExpansion {
   changed: boolean;
 }
 
+export interface MusicDraft {
+  action: 'play';
+  cleanQuery: string;
+  confidence: number;
+  hasTimeCue?: boolean;
+}
+
 export interface CaptureDraft {
   raw: string;
   title: string;
@@ -38,7 +45,28 @@ export interface CaptureDraft {
   dueDate: Date;
   armed: boolean;
   tags?: string[];
+  musicDraft?: MusicDraft;
 }
+
+export const AUDIO_VERBS_REGEX = /^(?:play|listen\s+to|hear|stream|put\s+on)\b/i;
+
+export const MUSIC_MARKERS_REGEX =
+  /\b(songs?|tracks?|music|albums?|playlists?|lo-?fi|ghazals?|bhajans?|qawwali|beats|soundtracks?|ost|disco|remix|acoustic|instrumental|jazz|rock|pop|classical|hiphop|hip-hop|rap|edm|ambient|raga|raag|carnatic|hindustani|sufi|k-?pop|j-?pop|metal|blues|reggae|folk)\b/i;
+
+export const NON_MUSIC_PLAY_ACTIVITIES_REGEX =
+  /^(?:play\s+)?(?:\b(?:with\b.*|tennis|table\s+tennis|ping\s+pong|badminton|cricket|football|soccer|basketball|volleyball|baseball|softball|golf|rugby|hockey|squash|racquetball|pickleball|padel|pool|billiards|snooker|chess|checkers|cards|poker|blackjack|rummy|bridge|solitaire|dominoes|mahjong|monopoly|scrabble|trivia|bingo|charades|twister|board\s+games?|video\s+games?|games?|a\s+game|the\s+game|sports?|tag|hide\s+and\s+seek|catch|frisbee|dodgeball|kickball|handball|bowling|darts|foosball|pinball|outside|in\s+the\s+(?:park|yard|garden|snow|mud)|dead|dumb|the\s+fool|a\s+role|victim|safe|it\s+safe|fair|it\s+cool|cool|hardball|defense|offense|hooky|pranks?)\b)/i;
+
+export const NON_MUSIC_LISTEN_TARGETS_REGEX =
+  /^(?:the\s+|a\s+|an\s+|my\s+|our\s+|your\s+|his\s+|her\s+|their\s+)?(?:mom|mother|mum|dad|father|parents?|wife|husband|spouse|partner|brother|sister|son|daughter|kids?|children|child|baby|babies|family|friends?|grandma|grandmother|grandpa|grandfather|aunt|uncle|cousin|doctor|dr\.?|nurse|teacher|professor|boss|manager|client|lawyer|colleagues?|coworkers?|team|mentor|coach|therapist|counselor|priest|pastor|rabbi|guru|elders?|people|someone|everyone|everybody|anybody|somebody|nobody|him|her|them|me|us|voicemail|voicemails|voice\s*mail|voice\s*mails|voice\s*memo|voice\s*memos|voice\s*notes?|messages?|audio\s*messages?|phone\s*call|recordings?|audio\s*recordings?|lecture|lectures|meeting|meetings|webinar|webinars|tapes?|town\s*hall|podcasts?|audio\s*books?|audiobooks?|advice|feedback|suggestions?|instructions?|reason|gut|heart|conscience|inner\s*voice|warning|intuition|logic|common\s*sense)\b/i;
+
+export const NON_MUSIC_HEAR_TARGETS_REGEX =
+  /^(?:from|back\s+from|back|out|about)\b/i;
+
+export const NON_MUSIC_PUT_ON_TARGETS_REGEX =
+  /^(?:the\s+|a\s+|some\s+|my\s+|your\s+|his\s+|her\s+)?(?:jacket|coat|shoes?|boots?|socks?|pants?|shirt|clothes|clothing|suit|hat|cap|gloves?|mask|sunscreen|lotion|cream|makeup|laundry|kettle|tea|coffee|water|oven|stove|heater|ac|air\s*condition(?:er)?|alarm|tires?|glasses|seatbelt|brakes?)\b/i;
+
+export const NON_MUSIC_STREAM_TARGETS_REGEX =
+  /^(?:the\s+|a\s+)?(?:movie|film|show|series|episode|video|game|match|streamer|broadcast)\b/i;
 
 interface TimeRule {
   pattern: RegExp;
@@ -246,7 +274,111 @@ export function isListOrMultiLine(text: string): boolean {
   return false;
 }
 
-export function compileCapture(
+/**
+ * Detects natural language music playback intent and disambiguates
+ * against physical sports, tasks, and non-music activities.
+ */
+export function parseMusicIntent(
+  text: string,
+  hasTimeCue: boolean = false
+): MusicDraft | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  // Disqualify explicit non-playback task verbs at the beginning
+  if (
+    /^(?:buy|purchase|order|call|phone|email|mail|pay|send|write|clean|cook|bake|wash|fix|repair|practice|learn|read|meet|schedule|delete|remove|share)\b/i.test(
+      trimmed
+    )
+  ) {
+    return null;
+  }
+
+  // Disqualify physical sports, games, and playing with people/pets
+  if (NON_MUSIC_PLAY_ACTIVITIES_REGEX.test(trimmed)) {
+    return null;
+  }
+
+  // Check for standalone musical instrument playing (e.g. "play guitar", "play piano")
+  // unless explicitly accompanied by markers like "songs", "tracks", "music"
+  const instrumentMatch = trimmed.match(
+    /^play\s+(?:the\s+)?(guitar|piano|violin|drums|flute|harmonium|tabla|cello|saxophone|trumpet)\b/i
+  );
+  if (instrumentMatch && !MUSIC_MARKERS_REGEX.test(trimmed)) {
+    return null;
+  }
+
+  const verbMatch = trimmed.match(AUDIO_VERBS_REGEX);
+  const hasMusicMarker = MUSIC_MARKERS_REGEX.test(trimmed);
+
+  if (verbMatch) {
+    const verb = verbMatch[0].toLowerCase();
+    let cleanQuery = trimmed.slice(verbMatch[0].length).trim();
+    cleanQuery = cleanQuery.replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').trim();
+    if (!cleanQuery) return null;
+
+    // Check if clean query matches non-music activity
+    if (
+      NON_MUSIC_PLAY_ACTIVITIES_REGEX.test(cleanQuery) ||
+      NON_MUSIC_PLAY_ACTIVITIES_REGEX.test(trimmed)
+    ) {
+      return null;
+    }
+
+    // Disambiguate "listen to <non-music target>" unless accompanied by music markers
+    if (verb.startsWith('listen') && !hasMusicMarker) {
+      if (NON_MUSIC_LISTEN_TARGETS_REGEX.test(cleanQuery)) {
+        return null;
+      }
+    }
+
+    // Disambiguate "hear <from / back from / out / about>" unless accompanied by music markers
+    if (verb.startsWith('hear') && !hasMusicMarker) {
+      if (NON_MUSIC_HEAR_TARGETS_REGEX.test(cleanQuery)) {
+        return null;
+      }
+    }
+
+    // Disambiguate "put on <clothing / appliance / chore>" unless accompanied by music markers
+    if (verb.startsWith('put on') && !hasMusicMarker) {
+      if (NON_MUSIC_PUT_ON_TARGETS_REGEX.test(cleanQuery)) {
+        return null;
+      }
+    }
+
+    // Disambiguate "stream <movie / show / game>" unless accompanied by music markers
+    if (verb.startsWith('stream') && !hasMusicMarker) {
+      if (NON_MUSIC_STREAM_TARGETS_REGEX.test(cleanQuery)) {
+        return null;
+      }
+    }
+
+    const confidence = hasMusicMarker ? 0.95 : 0.85;
+    return {
+      action: 'play',
+      cleanQuery,
+      confidence,
+      hasTimeCue,
+    };
+  }
+
+  // Standalone music markers without leading verb (e.g. "spb songs hindi", "lofi chill beats")
+  if (hasMusicMarker && !/^(?:task|remind|todo|note)\b/i.test(trimmed)) {
+    if (/\b(songs?|tracks?|playlists?|lo-?fi|ghazals?)\b/i.test(trimmed)) {
+      const cleanQuery = trimmed.replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').trim();
+      return {
+        action: 'play',
+        cleanQuery,
+        confidence: 0.8,
+        hasTimeCue,
+      };
+    }
+  }
+
+  return null;
+}
+
+export function compileCaptureWithIntent(
   raw: string,
   selectedChip: CaptureChip = 'inbox',
   now: Date = new Date(),
@@ -257,7 +389,14 @@ export function compileCapture(
   const expansion = expandLingo(tagStripped, lingoTable);
   const title = expansion.output.slice(0, 255).trim();
 
-  if (selectedChip !== 'inbox') {
+  const isChipTimed = selectedChip !== 'inbox';
+  const inferred = isChipTimed ? null : inferTimeCue(title, now);
+  const hasTimeCue = isChipTimed || inferred !== null;
+
+  const musicTargetText = inferred ? inferred.strippedTitle : title;
+  const musicDraft = parseMusicIntent(musicTargetText, hasTimeCue);
+
+  if (isChipTimed) {
     return {
       raw,
       title,
@@ -266,10 +405,10 @@ export function compileCapture(
       dueDate: CHIP_CALC[selectedChip](now),
       armed: true,
       tags: tags.length > 0 ? tags : undefined,
+      musicDraft: musicDraft || undefined,
     };
   }
 
-  const inferred = inferTimeCue(title, now);
   if (inferred) {
     return {
       raw,
@@ -279,6 +418,7 @@ export function compileCapture(
       dueDate: inferred.dueDate,
       armed: true,
       tags: tags.length > 0 ? tags : undefined,
+      musicDraft: musicDraft || undefined,
     };
   }
 
@@ -290,7 +430,17 @@ export function compileCapture(
     dueDate: now,
     armed: false,
     tags: tags.length > 0 ? tags : undefined,
+    musicDraft: musicDraft || undefined,
   };
+}
+
+export function compileCapture(
+  raw: string,
+  selectedChip: CaptureChip = 'inbox',
+  now: Date = new Date(),
+  lingoTable: string = DEFAULT_LINGO
+): CaptureDraft {
+  return compileCaptureWithIntent(raw, selectedChip, now, lingoTable);
 }
 
 /**

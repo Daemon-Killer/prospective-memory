@@ -188,6 +188,27 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "not found")
         return rem
 
+    @app.get("/v1/media/resolve")
+    def get_media_resolve(q: str = Query(..., min_length=1)) -> dict:
+        from prospective_memory.mcp_server import resolve_music
+        cleaned = q.strip()
+        if not cleaned:
+            raise HTTPException(400, "query required")
+        return resolve_music(cleaned)
+
+    @app.post("/v1/media/resolve")
+    def post_media_resolve(body: dict) -> dict:
+        from prospective_memory.mcp_server import resolve_music
+        q = (body.get("q") or body.get("query") or "").strip()
+        if not q:
+            raise HTTPException(400, "query required")
+        return resolve_music(q)
+
+    @app.get("/v1/media/now_playing")
+    def get_media_now_playing() -> dict:
+        from prospective_memory.mcp_server import _NOW_PLAYING
+        return _NOW_PLAYING
+
     # Mount FastMCP SSE Starlette application for Claude Desktop, Cursor, and LLM SSE tool calling
     app.mount("/mcp", mcp.sse_app(mount_path="/mcp"))
 

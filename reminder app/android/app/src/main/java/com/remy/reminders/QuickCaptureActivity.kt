@@ -44,6 +44,7 @@ class QuickCaptureActivity : Activity() {
     private var selectedPreset: String = "inbox"
     private lateinit var inputField: EditText
     private lateinit var previewText: TextView
+    private lateinit var captureBtn: Button
     private val chipButtonMap = mutableMapOf<String, Button>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -233,7 +234,7 @@ class QuickCaptureActivity : Activity() {
             setBackgroundColor(Color.TRANSPARENT)
             setOnClickListener { finish() }
         }
-        val captureBtn = Button(this).apply {
+        captureBtn = Button(this).apply {
             text = "ADD"
             textSize = 11f
             typeface = android.graphics.Typeface.DEFAULT_BOLD
@@ -267,17 +268,175 @@ class QuickCaptureActivity : Activity() {
         }, 100)
     }
 
+    private fun parseMusicIntent(text: String, isArmed: Boolean): Pair<String, Boolean>? {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return null
+
+        val lower = trimmed.lowercase(Locale.ROOT)
+
+        // Disqualify standard non-audio task verbs at start
+        val nonMusicVerbs = listOf(
+            "buy ", "purchase ", "order ", "call ", "phone ", "email ", "mail ", "pay ",
+            "send ", "write ", "clean ", "cook ", "bake ", "wash ", "fix ", "repair ",
+            "practice ", "learn ", "read ", "meet ", "schedule ", "delete ", "remove ", "share "
+        )
+        for (v in nonMusicVerbs) {
+            if (lower.startsWith(v)) return null
+        }
+
+        // Disqualify playing with anyone/anything
+        if (lower == "play with" || lower.startsWith("play with ") || lower.startsWith("with ")) {
+            return null
+        }
+
+        // Disqualify physical tasks, sports, games, and playing with people/pets
+        val nonMusicKeywords = listOf(
+            "tennis", "table tennis", "ping pong", "badminton", "cricket",
+            "football", "soccer", "basketball", "volleyball", "baseball", "softball", "golf", "squash",
+            "racquetball", "pickleball", "padel", "pool", "billiards", "snooker", "rugby", "hockey",
+            "chess", "checkers", "cards", "poker", "blackjack", "rummy", "bridge", "solitaire", "dominoes",
+            "mahjong", "monopoly", "scrabble", "trivia", "bingo", "charades", "twister",
+            "board game", "board games", "video game", "video games", "a game", "the game", "games", "game",
+            "sports", "sport", "tag", "hide and seek", "catch", "frisbee", "dodgeball", "kickball", "handball",
+            "bowling", "darts", "outside", "in the park", "dead", "dumb", "the fool", "a role", "victim",
+            "safe", "it safe", "fair", "it cool", "hardball", "defense", "offense"
+        )
+        for (nm in nonMusicKeywords) {
+            if (lower == "play $nm" || lower.startsWith("play $nm ")) {
+                return null
+            }
+        }
+
+        val markers = listOf(
+            "songs", "song", "tracks", "track", "music", "album", "albums", "playlist", "playlists",
+            "lofi", "lo-fi", "ghazal", "ghazals", "beats", "ost", "soundtrack", "soundtracks",
+            "disco", "remix", "acoustic", "instrumental", "jazz", "rock", "pop", "classical",
+            "hiphop", "hip-hop", "rap", "edm", "ambient", "raga", "bhajan", "qawwali"
+        )
+        val hasMarker = markers.any { lower.contains(it) }
+
+        // Instrument check
+        val instruments = listOf("guitar", "piano", "violin", "drums", "flute", "harmonium", "tabla", "cello", "saxophone", "trumpet")
+        for (inst in instruments) {
+            if ((lower == "play $inst" || lower.startsWith("play $inst ") || lower == "play the $inst" || lower.startsWith("play the $inst ")) && !hasMarker) {
+                return null
+            }
+        }
+
+        val audioVerbs = listOf("play ", "listen to ", "hear ", "stream ", "put on ")
+        var matchedVerb: String? = null
+        var cleanQuery: String? = null
+        for (verb in audioVerbs) {
+            if (lower.startsWith(verb)) {
+                matchedVerb = verb
+                cleanQuery = trimmed.substring(verb.length).trim().trim('"', '\'')
+                break
+            }
+        }
+
+        if (matchedVerb != null && !cleanQuery.isNullOrBlank()) {
+            val cleanLower = cleanQuery.lowercase(Locale.ROOT)
+            // Disqualify sports/games in clean query as well
+            for (nm in nonMusicKeywords) {
+                if (cleanLower == nm || cleanLower.startsWith("$nm ")) return null
+            }
+
+            // Disqualify non-music targets for "listen to"
+            if (matchedVerb.startsWith("listen") && !hasMarker) {
+                val nonMusicPeopleAndDuties = listOf(
+                    "mom", "mother", "mum", "dad", "father", "parents", "wife", "husband", "spouse",
+                    "brother", "sister", "son", "daughter", "kids", "children", "baby", "family",
+                    "friends", "doctor", "dr", "teacher", "professor", "boss", "manager", "client",
+                    "lawyer", "colleague", "coworker", "team", "someone", "everyone", "anybody", "nobody",
+                    "him", "her", "them", "me", "us", "voicemail", "voicemails", "voice memo", "message",
+                    "messages", "lecture", "meeting", "webinar", "recording", "advice", "feedback",
+                    "instructions", "reason", "heart", "gut", "conscience", "podcast"
+                )
+                for (target in nonMusicPeopleAndDuties) {
+                    if (cleanLower == target || cleanLower.startsWith("$target ") ||
+                        cleanLower == "the $target" || cleanLower.startsWith("the $target ") ||
+                        cleanLower == "my $target" || cleanLower.startsWith("my $target ") ||
+                        cleanLower == "our $target" || cleanLower.startsWith("our $target ")) {
+                        return null
+                    }
+                }
+            }
+
+            // Disqualify non-music targets for "put on"
+            if (matchedVerb.startsWith("put on") && !hasMarker) {
+                val nonMusicChores = listOf(
+                    "jacket", "coat", "shoes", "boots", "socks", "pants", "shirt", "clothes", "clothing",
+                    "suit", "hat", "mask", "sunscreen", "makeup", "laundry", "kettle", "tea", "coffee",
+                    "water", "oven", "stove", "heater", "ac", "alarm", "tires", "glasses"
+                )
+                for (item in nonMusicChores) {
+                    if (cleanLower == item || cleanLower.startsWith("$item ") ||
+                        cleanLower == "the $item" || cleanLower.startsWith("the $item ") ||
+                        cleanLower == "a $item" || cleanLower.startsWith("a $item ") ||
+                        cleanLower == "my $item" || cleanLower.startsWith("my $item ")) {
+                        return null
+                    }
+                }
+            }
+
+            // Disqualify non-music targets for "hear"
+            if (matchedVerb.startsWith("hear") && !hasMarker) {
+                if (cleanLower.startsWith("from ") || cleanLower.startsWith("back ") || cleanLower.startsWith("out ") || cleanLower.startsWith("about ")) {
+                    return null
+                }
+            }
+
+            // Disqualify non-music targets for "stream"
+            if (matchedVerb.startsWith("stream") && !hasMarker) {
+                val nonMusicMedia = listOf("movie", "film", "show", "series", "episode", "game", "match", "video")
+                for (v in nonMusicMedia) {
+                    if (cleanLower == v || cleanLower.startsWith("$v ") || cleanLower == "the $v" || cleanLower.startsWith("the $v ")) {
+                        return null
+                    }
+                }
+            }
+
+            return cleanQuery to isArmed
+        }
+
+        // Standalone music markers without leading verb
+        if (hasMarker && !lower.startsWith("task ") && !lower.startsWith("remind ") && !lower.startsWith("todo ")) {
+            val standaloneMarkers = listOf("songs", "song", "tracks", "track", "playlist", "playlists", "lofi", "lo-fi", "ghazal", "ghazals")
+            for (m in standaloneMarkers) {
+                if (lower.contains(m)) {
+                    cleanQuery = trimmed.trim('"', '\'')
+                    break
+                }
+            }
+        }
+
+        if (cleanQuery.isNullOrBlank()) return null
+        return cleanQuery to isArmed
+    }
+
     private fun updatePreview() {
         val raw = inputField.text.toString().trim()
         if (raw.isEmpty()) {
             previewText.text = if (selectedPreset == "inbox") "INBOX — NO ALARM UNTIL YOU ARM IT" else "TIMED: $selectedPreset"
             previewText.setTextColor(Color.parseColor("#777777"))
+            captureBtn.text = "ADD"
             return
         }
 
         val expanded = expandLingoCustom(raw)
         val now = Date()
         val (_, isArmed) = calculateDueDate(selectedPreset, raw, now)
+        val musicIntent = parseMusicIntent(raw, isArmed)
+        if (musicIntent != null && !isArmed) {
+            previewText.text = "▶ PLAY: ${musicIntent.first} · STREAM"
+            previewText.setTextColor(Color.parseColor("#10B981"))
+            captureBtn.text = "PLAY"
+            return
+        }
+
+        val lines = raw.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        captureBtn.text = if (lines.size > 1) "ADD ${lines.size}" else "ADD"
+
         val statusLabel = if (isArmed) "TIMED" else "INBOX"
         previewText.text = "→ $expanded · $statusLabel"
         previewText.setTextColor(if (isArmed) Color.parseColor("#3B82F6") else Color.parseColor("#80CBC4"))
@@ -451,6 +610,18 @@ class QuickCaptureActivity : Activity() {
         }
         val nowIso = isoFormat.format(now)
 
+        val (_, firstArmed) = calculateDueDate(selectedPreset, titlesToCapture.first(), now)
+        if (titlesToCapture.size == 1) {
+            val musicIntent = parseMusicIntent(titlesToCapture.first(), firstArmed)
+            if (musicIntent != null && !firstArmed) {
+                val query = musicIntent.first
+                RemyAudioService.play(this, query)
+                Toast.makeText(this, "▶ Playing: $query", Toast.LENGTH_SHORT).show()
+                finish()
+                return
+            }
+        }
+
         thread {
             for (line in titlesToCapture) {
                 val title = expandLingoCustom(line)
@@ -461,7 +632,6 @@ class QuickCaptureActivity : Activity() {
             }
         }
 
-        val (_, firstArmed) = calculateDueDate(selectedPreset, titlesToCapture.first(), now)
         val msg = if (titlesToCapture.size > 1) {
             "Captured ${titlesToCapture.size} items"
         } else {

@@ -183,6 +183,45 @@ class RemyCaptureModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    @ReactMethod
+    fun playMusic(query: String, promise: Promise) {
+        try {
+            RemyAudioService.play(reactContext, query)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("ERR_PLAY_MUSIC", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun pauseMusic(promise: Promise) {
+        try {
+            RemyAudioService.pause(reactContext)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("ERR_PAUSE_MUSIC", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun stopMusic(promise: Promise) {
+        try {
+            RemyAudioService.stop(reactContext)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("ERR_STOP_MUSIC", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun getPlaybackState(promise: Promise) {
+        try {
+            promise.resolve(RemyAudioService.getStateJson())
+        } catch (e: Exception) {
+            promise.reject("ERR_GET_PLAYBACK_STATE", e.message)
+        }
+    }
+
     companion object {
         @Volatile
         var sharedText: String? = null

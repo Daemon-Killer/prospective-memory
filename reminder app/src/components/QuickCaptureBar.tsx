@@ -20,9 +20,11 @@ import {
   DEFAULT_LINGO,
   getStoredLingo,
   isListOrMultiLine,
+  MusicDraft,
 } from '../utils/captureCompiler';
 import { useTheme } from '../theme/ThemeContext';
 import { DrawingCanvasModal } from './DrawingCanvasModal';
+import { audioService } from '../services/audioService';
 
 export type QuickChipPreset = CaptureChip;
 
@@ -48,7 +50,9 @@ export interface QuickCaptureBarProps {
     armed?: boolean;
     inkData?: string | null;
     tags?: string[];
+    musicDraft?: MusicDraft;
   }) => Promise<void> | void;
+  onPlayMusic?: (query: string) => Promise<void> | void;
   themeColors?: ThemeColors;
   defaultPreset?: QuickChipPreset;
   placeholder?: string;
@@ -71,6 +75,7 @@ function useSafeInsets() {
 
 export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
   onCreateReminder,
+  onPlayMusic,
   themeColors: propColors,
   defaultPreset = 'inbox',
   placeholder = 'DAHI LENA  ·  C MOM  ·  TONIGHT',
@@ -241,6 +246,23 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
         }
       }
 
+      // Zero context-switch immediate music playback intent dispatch
+      if (
+        drafts.length === 1 &&
+        drafts[0].musicDraft &&
+        !drafts[0].armed &&
+        !drafts[0].musicDraft.hasTimeCue
+      ) {
+        const query = drafts[0].musicDraft.cleanQuery;
+        if (onPlayMusic) {
+          await onPlayMusic(query);
+        } else {
+          await audioService.play(query);
+        }
+        setText('');
+        return;
+      }
+
       for (const draft of drafts) {
         await onCreateReminder({
           title: draft.title,
@@ -248,6 +270,7 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
           preset: draft.preset,
           armed: draft.armed,
           tags: draft.tags,
+          musicDraft: draft.musicDraft,
         });
       }
 
@@ -266,6 +289,9 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
   const isBatchCapture = multiDrafts.length > 1;
   const isMultiLineLayout = isBatchCapture || text.includes('\n') || isListOrMultiLine(text);
   const singleDraft = multiDrafts[0] || null;
+  const isImmediateMusic =
+    !isBatchCapture &&
+    Boolean(singleDraft?.musicDraft && !singleDraft.armed && !singleDraft.musicDraft.hasTimeCue);
 
   return (
     <KeyboardAvoidingView
@@ -419,7 +445,7 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
                 },
               ]}
             >
-              {isBatchCapture ? `ADD ${multiDrafts.length}` : 'ADD'}
+              {isBatchCapture ? `ADD ${multiDrafts.length}` : isImmediateMusic ? 'PLAY' : 'ADD'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -452,6 +478,13 @@ export const QuickCaptureBar: React.FC<QuickCaptureBarProps> = ({
             style={[styles.previewText, { color: themeColors.accent || themeColors.textPrimary }]}
           >
             {`→ SPLIT ${multiDrafts.length} ITEMS (${multiDrafts.filter((d) => d.armed).length} TIMED, ${multiDrafts.filter((d) => !d.armed).length} INBOX)`}
+          </Text>
+        ) : isImmediateMusic && singleDraft?.musicDraft ? (
+          <Text
+            testID="capture-preview"
+            style={[styles.previewText, { color: '#10B981' }]}
+          >
+            {`▶ PLAY: ${singleDraft.musicDraft.cleanQuery} · STREAM`}
           </Text>
         ) : singleDraft && (singleDraft.title !== text.trim() || singleDraft.armed) ? (
           <Text

@@ -25,6 +25,10 @@ export interface IRemyCaptureService {
   getLingoTable(): Promise<string | null>;
   updateWidgetData(remindersJson: string): Promise<boolean>;
   getWidgetData(): Promise<string>;
+  playMusic(query: string): Promise<boolean>;
+  pauseMusic(): Promise<boolean>;
+  stopMusic(): Promise<boolean>;
+  getPlaybackState(): Promise<string>;
 }
 
 export class RemyCaptureService implements IRemyCaptureService {
@@ -188,8 +192,53 @@ export class RemyCaptureService implements IRemyCaptureService {
       return '[]';
     }
   }
+
+  async playMusic(query: string): Promise<boolean> {
+    if (Platform.OS !== 'android' || !this.module?.playMusic) {
+      return false;
+    }
+    try {
+      return await this.module.playMusic(query);
+    } catch {
+      return false;
+    }
+  }
+
+  async pauseMusic(): Promise<boolean> {
+    if (Platform.OS !== 'android' || !this.module?.pauseMusic) {
+      return false;
+    }
+    try {
+      return await this.module.pauseMusic();
+    } catch {
+      return false;
+    }
+  }
+
+  async stopMusic(): Promise<boolean> {
+    if (Platform.OS !== 'android' || !this.module?.stopMusic) {
+      return false;
+    }
+    try {
+      return await this.module.stopMusic();
+    } catch {
+      return false;
+    }
+  }
+
+  async getPlaybackState(): Promise<string> {
+    if (Platform.OS !== 'android' || !this.module?.getPlaybackState) {
+      return '{"isPlaying":false}';
+    }
+    try {
+      return (await this.module.getPlaybackState()) || '{"isPlaying":false}';
+    } catch {
+      return '{"isPlaying":false}';
+    }
+  }
 }
 
 export const remyCaptureService = new RemyCaptureService();
+
 
 
