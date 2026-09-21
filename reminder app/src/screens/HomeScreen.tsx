@@ -13,6 +13,7 @@ import { sensoryStorageService } from '../sensory/sensoryStorageService';
 import { dealsStorageService } from '../sensory/dealsStorageService';
 import { sensoryBridge } from '../sensory/sensoryBridge';
 import { intentClassifier } from '../sensory/intentClassifier';
+import { isMessagingPackage } from '../sensory/sensoryFilterConfig';
 import { SensorySuggestion, VoucherItem } from '../sensory/types';
 import { Masthead } from '../components/Masthead';
 import { SensoryInboxShelf } from '../components/SensoryInboxShelf';
@@ -97,6 +98,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const [internalAutoClearPromos, setInternalAutoClearPromos] = useState<boolean>(true);
   const [internalAutoSnoozeNoise, setInternalAutoSnoozeNoise] = useState<boolean>(false);
+  const [hasNotificationAccess, setHasNotificationAccess] = useState<boolean>(true);
 
   const autoClearPromos = propAutoClearPromos ?? internalAutoClearPromos;
   const autoSnoozeNoise = propAutoSnoozeNoise ?? internalAutoSnoozeNoise;
@@ -160,6 +162,26 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       }
     }).catch(() => {});
 
+    // Check notification listener permission on mount and when app resumes
+    const checkNotificationPermission = async () => {
+      try {
+        const granted = await sensoryBridge.isPermissionGranted();
+        if (isMounted) {
+          setHasNotificationAccess(granted);
+          if (granted) {
+            await sensoryBridge.processActiveNotifications?.();
+          }
+        }
+      } catch {}
+    };
+    void checkNotificationPermission();
+
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void checkNotificationPermission();
+      }
+    });
+
     const unsubSensory = sensoryStorageService.subscribe(() => {
       if (isMounted) {
         setInternalSuggestions(sensoryStorageService.getPendingSuggestions());
@@ -171,17 +193,39 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       }
     });
 
+    // Helper to clear or mark as read promotional alerts
+    const handlePromoClearing = async (payload: any) => {
+      if (!payload.key) return;
+      if (isMessagingPackage(payload.packageName)) {
+        await sensoryBridge.markAsRead(payload.key);
+      } else {
+        await sensoryBridge.dismissNotification(payload.key);
+      }
+    };
+
     // Wire live incoming notification routing from sensoryBridge
     const routeNotification = async (payload: any) => {
       try {
         const result = intentClassifier.classify(payload);
         if (result.stream === 'actionable' && result.actionable) {
-          await sensoryStorageService.addFromExtraction(result.actionable, payload);
+          if (result.actionable.tags?.includes('call')) {
+            // Auto-create reminder for missed call
+            await remindersHook.createReminder({
+              title: result.actionable.title,
+              dueDate: result.actionable.inferredDueDate || new Date().toISOString(),
+              armed: true
+            });
+            if (payload.key) {
+              await sensoryBridge.dismissNotification(payload.key);
+            }
+          } else {
+            await sensoryStorageService.addFromExtraction(result.actionable, payload);
+          }
         } else if (result.stream === 'deal' && result.deal) {
           await dealsStorageService.addFromExtraction(result.deal, payload);
           // Active notification tray clearing: dismiss promotional alert once stored in Deals Radar
-          if (autoClearPromos && payload.key) {
-            await sensoryBridge.dismissNotification(payload.key);
+          if (autoClearPromos) {
+            await handlePromoClearing(payload);
           }
         } else if (result.stream === 'noise' && autoSnoozeNoise && payload.key) {
           await sensoryBridge.snoozeNotification(payload.key, 3600000);
@@ -203,6 +247,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
     return () => {
       isMounted = false;
+      appStateSub.remove();
       unsubSensory();
       unsubDeals();
       unsubBridge();
@@ -216,11 +261,26 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       for (const payload of pending) {
         const result = intentClassifier.classify(payload);
         if (result.stream === 'actionable' && result.actionable) {
-          await sensoryStorageService.addFromExtraction(result.actionable, payload);
+          if (result.actionable.tags?.includes('call')) {
+            await remindersHook.createReminder({
+              title: result.actionable.title,
+              dueDate: result.actionable.inferredDueDate || new Date().toISOString(),
+              armed: true
+            });
+            if (payload.key) {
+              await sensoryBridge.dismissNotification(payload.key);
+            }
+          } else {
+            await sensoryStorageService.addFromExtraction(result.actionable, payload);
+          }
         } else if (result.stream === 'deal' && result.deal) {
           await dealsStorageService.addFromExtraction(result.deal, payload);
           if (autoClearPromos && payload.key) {
-            await sensoryBridge.dismissNotification(payload.key);
+            if (isMessagingPackage(payload.packageName)) {
+              await sensoryBridge.markAsRead(payload.key);
+            } else {
+              await sensoryBridge.dismissNotification(payload.key);
+            }
           }
         } else if (result.stream === 'noise' && autoSnoozeNoise && payload.key) {
           await sensoryBridge.snoozeNotification(payload.key, 3600000);
@@ -231,8 +291,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     }
   }, [autoClearPromos, autoSnoozeNoise]);
 
+  const handleRequestNotificationAccess = useCallback(async () => {
+    try {
+      const granted = await sensoryBridge.requestPermission();
+      setHasNotificationAccess(granted);
+      if (granted) {
+        await sensoryBridge.processActiveNotifications?.();
+      }
+    } catch (err) {
+      console.warn('HomeScreen: Error requesting notification permission:', err);
+    }
+  }, []);
+
   const handleToggleAutoClearPromos = useCallback(async () => {
     const nextVal = !autoClearPromos;
+    if (nextVal && !hasNotificationAccess) {
+      void handleRequestNotificationAccess();
+    }
     if (propOnToggleAutoClearPromos) {
       propOnToggleAutoClearPromos(nextVal);
     } else {
@@ -241,7 +316,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       const cfg = await sensoryBridge.getFilterConfig();
       await sensoryBridge.updateFilterConfig({ ...cfg, autoClearPromos: nextVal });
     }
-  }, [autoClearPromos, propOnToggleAutoClearPromos]);
+  }, [autoClearPromos, hasNotificationAccess, handleRequestNotificationAccess, propOnToggleAutoClearPromos]);
 
   const handleToggleAutoSnoozeNoise = useCallback(async () => {
     const nextVal = !autoSnoozeNoise;
@@ -545,6 +620,44 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           onOpenBubbleSettings={handleOpenBubbleSettings}
           isBubbleActive={isBubbleActive}
         />
+
+        {/* Permission Alert Banner if Notification Access is not granted */}
+        {!hasNotificationAccess && (
+          <TouchableOpacity
+            testID="notification-access-alert-banner"
+            onPress={handleRequestNotificationAccess}
+            activeOpacity={0.8}
+            style={[
+              styles.promoRadarBanner,
+              {
+                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                borderColor: '#EF4444',
+                marginBottom: 8,
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Notification Access Required. Tap to grant permission."
+          >
+            <View style={styles.promoRadarHeaderRow}>
+              <View style={styles.promoRadarTitleCluster}>
+                <View style={[styles.promoRadarSignalDot, { backgroundColor: '#EF4444' }]} />
+                <Text style={[styles.promoRadarTag, { color: '#EF4444', fontWeight: 'bold' }]}>
+                  NOTIFICATION ACCESS REQUIRED · TAP TO GRANT
+                </Text>
+              </View>
+              <View style={[styles.promoToggleBtn, { borderColor: '#EF4444', backgroundColor: '#EF4444' }]}>
+                <Text style={[styles.promoToggleText, { color: '#FFFFFF', fontWeight: 'bold' }]}>
+                  GRANT ACCESS
+                </Text>
+              </View>
+            </View>
+            <View style={styles.promoRadarBodyRow}>
+              <Text style={[styles.promoRadarDescription, { color: colors.textPrimary }]}>
+                Notification access is required for Remy to intercept offers, mark WhatsApp/SMS promos as read, and clear notification clutter.
+              </Text>
+            </View>
+          </TouchableOpacity>
+        )}
 
         {/* Promotional Clutter Clearing & Deals Radar Status Banner */}
         <View

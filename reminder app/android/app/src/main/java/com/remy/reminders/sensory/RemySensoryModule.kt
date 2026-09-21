@@ -3,6 +3,8 @@ package com.remy.reminders.sensory
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import com.facebook.react.bridge.Arguments
@@ -32,6 +34,9 @@ class RemySensoryModule(private val reactContext: ReactApplicationContext) :
     fun isPermissionGranted(promise: Promise) {
         try {
             val enabled = isNotificationServiceEnabled(reactContext)
+            if (enabled && RemyNotificationListenerService.instance == null) {
+                checkAndRebindIfNeeded(reactContext)
+            }
             promise.resolve(enabled)
         } catch (e: Exception) {
             promise.reject("ERR_CHECK_PERMISSION", e.message)
@@ -43,16 +48,69 @@ class RemySensoryModule(private val reactContext: ReactApplicationContext) :
         try {
             val isEnabled = isNotificationServiceEnabled(reactContext)
             if (!isEnabled) {
-                val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                var launched = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    try {
+                        val detailIntent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS).apply {
+                            putExtra(
+                                Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
+                                ComponentName(reactContext, RemyNotificationListenerService::class.java).flattenToString()
+                            )
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        if (detailIntent.resolveActivity(reactContext.packageManager) != null) {
+                            reactContext.startActivity(detailIntent)
+                            launched = true
+                        }
+                    } catch (e: Exception) {
+                        Log.w("RemySensory", "Failed to launch detail settings; falling back", e)
+                    }
                 }
-                reactContext.startActivity(intent)
+                if (!launched) {
+                    val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    reactContext.startActivity(intent)
+                }
                 promise.resolve(false)
             } else {
                 promise.resolve(true)
             }
         } catch (e: Exception) {
             promise.reject("ERR_REQUEST_PERMISSION", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun openNotificationListenerSettings(promise: Promise) {
+        try {
+            var launched = false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    val detailIntent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS).apply {
+                        putExtra(
+                            Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
+                            ComponentName(reactContext, RemyNotificationListenerService::class.java).flattenToString()
+                        )
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    if (detailIntent.resolveActivity(reactContext.packageManager) != null) {
+                        reactContext.startActivity(detailIntent)
+                        launched = true
+                    }
+                } catch (e: Exception) {
+                    Log.w("RemySensory", "Failed to open detail settings; falling back", e)
+                }
+            }
+            if (!launched) {
+                val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                reactContext.startActivity(intent)
+            }
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("ERR_OPEN_SETTINGS", e.message)
         }
     }
 
@@ -135,14 +193,27 @@ class RemySensoryModule(private val reactContext: ReactApplicationContext) :
     fun updateFilterConfig(configJson: String, promise: Promise) {
         try {
             // Validate JSON syntax before saving
-            JSONObject(configJson)
+            val json = JSONObject(configJson)
             val prefs = reactContext.getSharedPreferences(
                 RemyNotificationListenerService.PREFS_NAME,
                 Context.MODE_PRIVATE
             )
-            prefs.edit()
+            val editor = prefs.edit()
                 .putString(RemyNotificationListenerService.PREF_FILTER_CONFIG, configJson)
-                .apply()
+            if (json.has("autoClearPromos")) {
+                editor.putBoolean(
+                    RemyNotificationListenerService.PREF_AUTO_CLEAR_PROMOS,
+                    json.optBoolean("autoClearPromos", true)
+                )
+            }
+            if (json.has("autoSnoozeNoise")) {
+                editor.putBoolean(
+                    RemyNotificationListenerService.PREF_AUTO_SNOOZE_NOISE,
+                    json.optBoolean("autoSnoozeNoise", false)
+                )
+            }
+            editor.apply()
+            RemyNotificationListenerService.processActiveNotifications()
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("ERR_UPDATE_FILTER_CONFIG", "Invalid filter JSON: ${e.message}")
@@ -277,6 +348,33 @@ class RemySensoryModule(private val reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun markAsRead(key: String?, promise: Promise) {
+        try {
+            if (key.isNullOrBlank()) {
+                promise.resolve(false)
+                return
+            }
+            val success = RemyNotificationListenerService.markNotificationAsRead(key)
+            promise.resolve(success)
+        } catch (e: Exception) {
+            promise.reject("ERR_MARK_AS_READ", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun processActiveNotifications(promise: Promise) {
+        try {
+            if (isNotificationServiceEnabled(reactContext) && RemyNotificationListenerService.instance == null) {
+                checkAndRebindIfNeeded(reactContext)
+            }
+            RemyNotificationListenerService.processActiveNotifications()
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("ERR_PROCESS_ACTIVE", e.message)
+        }
+    }
+
+    @ReactMethod
     fun setAutoClearPromos(enabled: Boolean, promise: Promise) {
         try {
             val prefs = reactContext.getSharedPreferences(
@@ -286,6 +384,9 @@ class RemySensoryModule(private val reactContext: ReactApplicationContext) :
             prefs.edit()
                 .putBoolean(RemyNotificationListenerService.PREF_AUTO_CLEAR_PROMOS, enabled)
                 .apply()
+            if (enabled) {
+                RemyNotificationListenerService.processActiveNotifications()
+            }
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("ERR_SET_AUTO_CLEAR_PROMOS", e.message)
@@ -316,6 +417,9 @@ class RemySensoryModule(private val reactContext: ReactApplicationContext) :
             prefs.edit()
                 .putBoolean(RemyNotificationListenerService.PREF_AUTO_SNOOZE_NOISE, enabled)
                 .apply()
+            if (enabled) {
+                RemyNotificationListenerService.processActiveNotifications()
+            }
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("ERR_SET_AUTO_SNOOZE_NOISE", e.message)
@@ -391,10 +495,14 @@ class RemySensoryModule(private val reactContext: ReactApplicationContext) :
 
         fun isNotificationServiceEnabled(context: Context): Boolean {
             val pkgName = context.packageName
-            val flat = Settings.Secure.getString(
-                context.contentResolver,
-                "enabled_notification_listeners"
-            ) ?: return false
+            val flat = try {
+                Settings.Secure.getString(
+                    context.contentResolver,
+                    "enabled_notification_listeners"
+                )
+            } catch (e: Exception) {
+                null
+            } ?: return false
 
             val names = flat.split(":")
             for (name in names) {
@@ -404,6 +512,28 @@ class RemySensoryModule(private val reactContext: ReactApplicationContext) :
                 }
             }
             return false
+        }
+
+        fun checkAndRebindIfNeeded(context: Context) {
+            if (isNotificationServiceEnabled(context) && RemyNotificationListenerService.instance == null) {
+                try {
+                    val cn = ComponentName(context, RemyNotificationListenerService::class.java)
+                    val pm = context.packageManager
+                    pm.setComponentEnabledSetting(
+                        cn,
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                        PackageManager.DONT_KILL_APP
+                    )
+                    pm.setComponentEnabledSetting(
+                        cn,
+                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                        PackageManager.DONT_KILL_APP
+                    )
+                    Log.i("RemySensory", "Toggled NotificationListenerService component state to force rebind.")
+                } catch (e: Exception) {
+                    Log.w("RemySensory", "Failed to force rebind NotificationListenerService", e)
+                }
+            }
         }
     }
 }

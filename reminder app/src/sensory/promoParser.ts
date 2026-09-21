@@ -149,9 +149,10 @@ export function parsePromo(
     }
   }
 
-  // Must have an explicit code OR a discount with promotional context
-  const hasPromoContext = /\b(?:sale|offer|save|off|coupon|discount|deal|flat|free)\b/i.test(combined);
-  const isDeal = Boolean(code || (discount && discountType !== 'other' && hasPromoContext));
+  // Must have an explicit code OR a discount with promotional context OR clear promotional offer phrasing
+  const hasPromoContext = /\b(?:sales?|offers?|savings?|save|off|coupons?|discounts?|deals?|flat|free|promos?|promotions?|promotional|cashbacks?|vouchers?|exclusive\s+offers?|special\s+offers?|flash\s+sales?|bogo)\b/i.test(combined);
+  const hasStrongPromoOffer = /\b(?:special\s+offers?|exclusive\s+offers?|limited\s+period\s+offers?|flash\s+sales?|mega\s+sales?|sales?\s+is\s+live|festive\s+offers?|claim\s+(?:your\s+)?offers?|claim\s+(?:your\s+)?rewards?|deals?\s+of\s+the\s+day|flat\s+discounts?|free\s+delivery|free\s+shipping|bogo|buy\s+1\s+get\s+1)\b/i.test(combined);
+  const isDeal = Boolean(code || (discount && discountType !== 'other' && hasPromoContext) || hasStrongPromoOffer || (hasPromoContext && discount));
 
   if (!isDeal) return null;
 

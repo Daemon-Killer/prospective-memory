@@ -25,6 +25,7 @@ const SYSTEM_ALERT_REGEX = /\b(?:apps? updated successfully|sync complete|downlo
 const RATING_FEEDBACK_REGEX = /\b(?:rate your (?:order|ride|experience|driver)|how was your|hope you enjoyed your)\b/i;
 const CHAT_PACKAGES = new Set([
   'com.whatsapp',
+  'com.whatsapp.w4b',
   'org.telegram.messenger',
   'org.thoughtcrime.securesms',
   'com.google.android.talk',
@@ -37,6 +38,7 @@ const TRAVEL_REGEX = /\b(web check-in|check-in is (?:now )?open|boarding (?:begi
 const RIDE_REGEX = /\b(driver .* arriving in|ride arriving|driver is arriving|cab is waiting|driver has arrived|captain is on the way)\b/i;
 const APPOINTMENT_REGEX = /\b(appointment scheduled|doctor appointment|dentist appointment|scheduled for|service booked|meeting reminder|calendar event|upcoming appointment|consultation scheduled|interview scheduled|visit scheduled|reservation confirmed|call scheduled|appointment reminder|upcoming meeting|zoom meeting|google meet|teams meeting|webex meeting|doctor visit|clinic appointment)\b/i;
 const ACTION_ITEM_REGEX = /\b(reminder:?|action required:?|action needed:?|to-do:?|don't forget to|please submit|deadline:?|please remember to|task:?|follow up on|follow-up:?|urgent:?|assignment due|task due)\b/i;
+const MISSED_CALL_REGEX = /\b(missed call|missed voice call|missed video call)\b/i;
 
 const PACKAGE_MERCHANT_MAP: Record<string, string> = {
   'com.swiggy.android': 'Swiggy',
@@ -81,7 +83,10 @@ export function checkNoise(title: string, text: string, pkg?: string): { isNoise
   if (RATING_FEEDBACK_REGEX.test(combined)) return { isNoise: true, reason: 'unactionable' };
 
   if (pkg && CHAT_PACKAGES.has(pkg) && !/\b(?:pay|due|flight|pickup|appointment)\b/i.test(combined)) {
-    return { isNoise: true, reason: 'chat' };
+    const promoCheck = parsePromo(title, text, pkg);
+    if (!promoCheck) {
+      return { isNoise: true, reason: 'chat' };
+    }
   }
 
   return { isNoise: false };
@@ -341,6 +346,42 @@ export function classifyNotification(payload: RawNotificationPayload, now: Date 
         confidence: 0.9,
       },
       confidence: 0.9,
+      evaluationTimeMs: elapsed,
+    };
+  }
+
+  // 3G. Missed Calls
+  if (MISSED_CALL_REGEX.test(combined)) {
+    const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime;
+    let caller = 'someone';
+    
+    if (MISSED_CALL_REGEX.test(title)) {
+      caller = text || title.replace(MISSED_CALL_REGEX, '').trim();
+    } else if (MISSED_CALL_REGEX.test(text)) {
+      const textWithoutRegex = text.replace(MISSED_CALL_REGEX, '').replace(/^\s*(?:from|by)?\s+/i, '').trim();
+      if (textWithoutRegex.length > 0) {
+        caller = textWithoutRegex;
+      } else {
+        caller = title;
+      }
+    }
+    caller = caller || 'someone';
+    
+    const dueDate = new Date(now.getTime() + 15 * 60000); // 15 mins later
+    
+    return {
+      stream: 'actionable',
+      actionable: {
+        title: `Call back ${caller}`,
+        actionVerb: 'Call',
+        context: combined,
+        inferredDueDate: dueDate.toISOString(),
+        armed: true,
+        category: 'general',
+        tags: ['call', 'communication'],
+        confidence: 0.99,
+      },
+      confidence: 0.99,
       evaluationTimeMs: elapsed,
     };
   }

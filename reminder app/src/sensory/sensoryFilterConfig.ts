@@ -22,6 +22,37 @@ export const DEFAULT_BLACKLIST_PACKAGES: string[] = [
 ];
 
 /**
+ * Known messaging packages (WhatsApp, SMS, RCS).
+ */
+export const MESSAGING_PACKAGES: string[] = [
+  'com.whatsapp',
+  'com.whatsapp.w4b',
+  'com.google.android.apps.messaging',
+  'com.samsung.android.messaging',
+  'com.android.mms',
+  'com.motorola.messaging',
+  'com.oneplus.mms',
+  'com.sonyericsson.conversations',
+  'com.truecaller',
+];
+
+export function isMessagingPackage(pkg?: string): boolean {
+  if (!pkg) return false;
+  const p = pkg.toLowerCase().trim();
+  return (
+    MESSAGING_PACKAGES.includes(p) ||
+    p.includes('whatsapp') ||
+    p.includes('messaging') ||
+    p.includes('.mms') ||
+    p.includes('telephony') ||
+    p.includes('truecaller') ||
+    p.includes('conversations') ||
+    p.includes('message') ||
+    p.includes('sms')
+  );
+}
+
+/**
  * Recommended packages for high-precision Whitelist mode.
  */
 export const RECOMMENDED_WHITELIST_PACKAGES: string[] = [
@@ -32,12 +63,20 @@ export const RECOMMENDED_WHITELIST_PACKAGES: string[] = [
   'com.zeptonow.android',
   'com.instamart.customer',
   'com.ubercab.eats',
+  'com.dominospizza',
+  'com.mcdonalds.app',
+  'com.dunzo.user',
+  'com.bigbasket.mobileapp',
   // E-Commerce & Retail
   'com.amazon.mShop.android.shopping',
   'in.amazon.mShop.android.shopping',
   'com.flipkart.android',
   'com.myntra.android',
   'com.tatacliq.app',
+  'com.tatadigital.tcp',
+  'com.meesho.supply',
+  'com.ajio.shop',
+  'com.nykaa',
   // Mobility & Travel
   'com.ubercab',
   'com.olacabs.customer',
@@ -49,6 +88,16 @@ export const RECOMMENDED_WHITELIST_PACKAGES: string[] = [
   'net.one97.paytm',
   'com.google.android.apps.nbu.paisa.user',
   'com.cred.app',
+  // Messaging & SMS (WhatsApp, RCS & SMS)
+  'com.whatsapp',
+  'com.whatsapp.w4b',
+  'com.google.android.apps.messaging',
+  'com.samsung.android.messaging',
+  'com.android.mms',
+  'com.motorola.messaging',
+  'com.oneplus.mms',
+  'com.sonyericsson.conversations',
+  'com.truecaller',
 ];
 
 export const DEFAULT_FILTER_CONFIG: SensoryFilterConfig = {

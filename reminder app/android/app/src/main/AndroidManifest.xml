@@ -83,6 +83,21 @@
           android:name="android.appwidget.provider"
           android:resource="@xml/agenda_widget_info" />
     </receiver>
+    <receiver
+        android:name=".TimelineWidget"
+        android:exported="true"
+        android:label="Remy Timeline">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+        <action android:name="com.remy.reminders.ACTION_REFRESH_TIMELINE_WIDGET" />
+      </intent-filter>
+      <meta-data
+          android:name="android.appwidget.provider"
+          android:resource="@xml/timeline_widget_info" />
+    </receiver>
+    <service
+        android:name=".TimelineWidgetService"
+        android:permission="android.permission.BIND_REMOTEVIEWS" />
     <service
         android:name=".BubbleService"
         android:exported="false"

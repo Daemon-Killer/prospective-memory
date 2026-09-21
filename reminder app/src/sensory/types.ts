@@ -217,12 +217,17 @@ export interface ISensoryBridge {
   // Active Tray Management
   dismissNotification(key: string): Promise<boolean>;
   snoozeNotification(key: string, durationMs?: number): Promise<boolean>;
+  markAsRead(key: string): Promise<boolean>;
   dismissAllNotifications(): Promise<boolean>;
+  processActiveNotifications?(): Promise<boolean>;
+  openNotificationListenerSettings?(): Promise<boolean>;
   setAutoClearPromos(enabled: boolean): Promise<boolean>;
   getAutoClearPromos(): Promise<boolean>;
   setAutoSnoozeNoise(enabled: boolean): Promise<boolean>;
   getAutoSnoozeNoise(): Promise<boolean>;
   getMockDismissedKeys?(): string[];
   getMockSnoozedKeys?(): Array<{ key: string; durationMs: number }>;
+  getMockMarkedAsReadKeys?(): string[];
+  setMockPermissionGranted?(granted: boolean): void;
   clearMockTray?(): void;
 }

@@ -8,6 +8,7 @@ import { sensoryBridge, RawNotificationPayload } from '../src/sensory/sensoryBri
 import { intentClassifier } from '../src/sensory/intentClassifier';
 import { sensoryStorageService } from '../src/sensory/sensoryStorageService';
 import { dealsStorageService } from '../src/sensory/dealsStorageService';
+import { isMessagingPackage } from '../src/sensory/sensoryFilterConfig';
 
 describe('Notification Tray Clearing, Snoozing & Important Ingress Suite', () => {
   const fixedNow = new Date('2026-09-19T10:00:00.000Z');
@@ -514,6 +515,252 @@ describe('Notification Tray Clearing, Snoozing & Important Ingress Suite', () =>
 
       expect(await sensoryBridge.getAutoClearPromos()).toBe(true);
       expect(await sensoryBridge.getAutoSnoozeNoise()).toBe(false);
+    });
+  });
+
+  describe('Part 4: WhatsApp & SMS Promotional Mark-As-Read Action Injection & Notification Access', () => {
+    test('routes promotional WhatsApp notification and invokes markAsRead', async () => {
+      let renderer: any = null;
+      await act(async () => {
+        renderer = ReactTestRenderer.create(
+          <ThemeProvider initialMode="void">
+            <HomeScreen currentTime={fixedNow} />
+          </ThemeProvider>
+        );
+      });
+
+      const whatsappPromo: RawNotificationPayload = {
+        id: 'whatsapp-promo-1',
+        key: '0|com.whatsapp|201|null|10002',
+        packageName: 'com.whatsapp',
+        title: 'Domino’s Pizza',
+        text: 'Special Offer: Flat 50% OFF up to Rs 150 on your order! Use code CRUST50. Valid till midnight.',
+        timestamp: fixedNow.getTime(),
+        postTime: fixedNow.getTime(),
+      };
+
+      await act(async () => {
+        await sensoryBridge.simulateNotification(whatsappPromo);
+      });
+
+      // Verify deal is extracted into Deals Radar
+      const vouchers = dealsStorageService.getVouchers();
+      expect(vouchers.some((v) => v.code === 'CRUST50')).toBe(true);
+
+      // Verify markAsRead was invoked
+      if (sensoryBridge.getMockMarkedAsReadKeys) {
+        expect(sensoryBridge.getMockMarkedAsReadKeys()).toContain(whatsappPromo.key);
+      }
+      if (sensoryBridge.getMockDismissedKeys) {
+        expect(sensoryBridge.getMockDismissedKeys()).toContain(whatsappPromo.key);
+      }
+
+      act(() => {
+        renderer.unmount();
+      });
+    });
+
+    test('routes promotional SMS notification and invokes markAsRead', async () => {
+      let renderer: any = null;
+      await act(async () => {
+        renderer = ReactTestRenderer.create(
+          <ThemeProvider initialMode="void">
+            <HomeScreen currentTime={fixedNow} />
+          </ThemeProvider>
+        );
+      });
+
+      const smsPromo: RawNotificationPayload = {
+        id: 'sms-promo-1',
+        key: '0|com.google.android.apps.messaging|301|null|10003',
+        packageName: 'com.google.android.apps.messaging',
+        title: 'AX-MYNTRA',
+        text: 'Exclusive Sale! Flat 40% off on all sneakers with code SNEAK40. Hurry, ends tonight!',
+        timestamp: fixedNow.getTime(),
+        postTime: fixedNow.getTime(),
+      };
+
+      await act(async () => {
+        await sensoryBridge.simulateNotification(smsPromo);
+      });
+
+      // Verify deal is stored in Deals Radar
+      const vouchers = dealsStorageService.getVouchers();
+      expect(vouchers.some((v) => v.code === 'SNEAK40')).toBe(true);
+
+      // Verify markAsRead was invoked
+      if (sensoryBridge.getMockMarkedAsReadKeys) {
+        expect(sensoryBridge.getMockMarkedAsReadKeys()).toContain(smsPromo.key);
+      }
+
+      act(() => {
+        renderer.unmount();
+      });
+    });
+
+    test('e-commerce promo invokes dismissNotification without marking as read', async () => {
+      let renderer: any = null;
+      await act(async () => {
+        renderer = ReactTestRenderer.create(
+          <ThemeProvider initialMode="void">
+            <HomeScreen currentTime={fixedNow} />
+          </ThemeProvider>
+        );
+      });
+
+      const swiggyPromo: RawNotificationPayload = {
+        id: 'swiggy-promo-1',
+        key: '0|com.swiggy.android|401|null|10004',
+        packageName: 'com.swiggy.android',
+        title: 'Swiggy',
+        text: 'Craving biryani? Use code SWIGGYIT to get 50% off up to Rs 100!',
+        timestamp: fixedNow.getTime(),
+        postTime: fixedNow.getTime(),
+      };
+
+      await act(async () => {
+        await sensoryBridge.simulateNotification(swiggyPromo);
+      });
+
+      if (sensoryBridge.getMockDismissedKeys) {
+        expect(sensoryBridge.getMockDismissedKeys()).toContain(swiggyPromo.key);
+      }
+      if (sensoryBridge.getMockMarkedAsReadKeys) {
+        expect(sensoryBridge.getMockMarkedAsReadKeys()).not.toContain(swiggyPromo.key);
+      }
+
+      act(() => {
+        renderer.unmount();
+      });
+    });
+
+    test('renders notification-access-alert-banner when permission is not granted', async () => {
+      sensoryBridge.setMockPermissionGranted?.(false);
+
+      let renderer: any = null;
+      await act(async () => {
+        renderer = ReactTestRenderer.create(
+          <ThemeProvider initialMode="void">
+            <HomeScreen currentTime={fixedNow} />
+          </ThemeProvider>
+        );
+      });
+
+      const alertBanner = renderer.root.findByProps({ testID: 'notification-access-alert-banner' });
+      expect(alertBanner).toBeDefined();
+
+      const reqSpy = jest.spyOn(sensoryBridge, 'requestPermission');
+      await act(async () => {
+        alertBanner.props.onPress();
+      });
+
+      expect(reqSpy).toHaveBeenCalled();
+      reqSpy.mockRestore();
+
+      sensoryBridge.setMockPermissionGranted?.(true);
+      act(() => {
+        renderer.unmount();
+      });
+    });
+
+    test('processActiveNotifications and openNotificationListenerSettings methods succeed', async () => {
+      const activeSuccess = await sensoryBridge.processActiveNotifications();
+      expect(activeSuccess).toBe(true);
+
+      const settingsSuccess = await sensoryBridge.openNotificationListenerSettings();
+      expect(settingsSuccess).toBe(true);
+    });
+
+    test('routes promotional WhatsApp notification with plural offers and marketing phrasing, marks as read', async () => {
+      let renderer: any = null;
+      await act(async () => {
+        renderer = ReactTestRenderer.create(
+          <ThemeProvider initialMode="void">
+            <HomeScreen currentTime={fixedNow} />
+          </ThemeProvider>
+        );
+      });
+
+      const whatsappPromoPlural: RawNotificationPayload = {
+        id: 'whatsapp-promo-plural-1',
+        key: '0|com.whatsapp|202|null|10005',
+        packageName: 'com.whatsapp',
+        title: 'Domino’s Pizza',
+        text: 'Exclusive offers! Flash sales are live with huge discounts on gourmet meals. Shop now!',
+        timestamp: fixedNow.getTime(),
+        postTime: fixedNow.getTime(),
+      };
+
+      await act(async () => {
+        await sensoryBridge.simulateNotification(whatsappPromoPlural);
+      });
+
+      // Verify deal extracted
+      const vouchers = dealsStorageService.getVouchers();
+      expect(vouchers.some((v) => v.merchant.includes("Domino"))).toBe(true);
+
+      // Verify mark-as-read was invoked
+      if (sensoryBridge.getMockMarkedAsReadKeys) {
+        expect(sensoryBridge.getMockMarkedAsReadKeys()).toContain(whatsappPromoPlural.key);
+      }
+      if (sensoryBridge.getMockDismissedKeys) {
+        expect(sensoryBridge.getMockDismissedKeys()).toContain(whatsappPromoPlural.key);
+      }
+
+      act(() => {
+        renderer.unmount();
+      });
+    });
+
+    test('routes promotional SMS from Truecaller (com.truecaller) with plural discounts and marks as read', async () => {
+      let renderer: any = null;
+      await act(async () => {
+        renderer = ReactTestRenderer.create(
+          <ThemeProvider initialMode="void">
+            <HomeScreen currentTime={fixedNow} />
+          </ThemeProvider>
+        );
+      });
+
+      const truecallerSms: RawNotificationPayload = {
+        id: 'truecaller-sms-1',
+        key: '0|com.truecaller|302|null|10006',
+        packageName: 'com.truecaller',
+        title: 'AJIO Deals',
+        text: 'Special offers! Mega discounts across all apparel. Avail this offer today!',
+        timestamp: fixedNow.getTime(),
+        postTime: fixedNow.getTime(),
+      };
+
+      await act(async () => {
+        await sensoryBridge.simulateNotification(truecallerSms);
+      });
+
+      // Verify mark-as-read called for Truecaller SMS
+      if (sensoryBridge.getMockMarkedAsReadKeys) {
+        expect(sensoryBridge.getMockMarkedAsReadKeys()).toContain(truecallerSms.key);
+      }
+
+      act(() => {
+        renderer.unmount();
+      });
+    });
+
+    test('isMessagingPackage helper accurately detects WhatsApp, SMS, and messaging variants', () => {
+      expect(isMessagingPackage('com.whatsapp')).toBe(true);
+      expect(isMessagingPackage('com.whatsapp.w4b')).toBe(true);
+      expect(isMessagingPackage('com.google.android.apps.messaging')).toBe(true);
+      expect(isMessagingPackage('com.samsung.android.messaging')).toBe(true);
+      expect(isMessagingPackage('com.android.mms')).toBe(true);
+      expect(isMessagingPackage('com.oneplus.mms')).toBe(true);
+      expect(isMessagingPackage('com.motorola.messaging')).toBe(true);
+      expect(isMessagingPackage('com.truecaller')).toBe(true);
+      expect(isMessagingPackage('com.sonyericsson.conversations')).toBe(true);
+
+      // Non-messaging
+      expect(isMessagingPackage('com.swiggy.android')).toBe(false);
+      expect(isMessagingPackage('com.amazon.mShop.android.shopping')).toBe(false);
+      expect(isMessagingPackage(undefined)).toBe(false);
     });
   });
 });

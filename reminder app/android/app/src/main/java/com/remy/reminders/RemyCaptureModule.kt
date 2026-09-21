@@ -166,6 +166,7 @@ class RemyCaptureModule(private val reactContext: ReactApplicationContext) :
             val prefs = reactContext.getSharedPreferences(QuickCaptureActivity.PREFS_NAME, Context.MODE_PRIVATE)
             prefs.edit().putString(AgendaWidget.PREF_WIDGET_REMINDERS, remindersJson).apply()
             AgendaWidget.updateAll(reactContext)
+            TimelineWidget.updateAll(reactContext)
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("ERR_UPDATE_WIDGET", e.message)

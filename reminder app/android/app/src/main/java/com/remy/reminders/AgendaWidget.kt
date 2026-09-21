@@ -79,6 +79,7 @@ class AgendaWidget : AppWidgetProvider() {
             }
             prefs.edit().putString(PREF_WIDGET_REMINDERS, array.toString()).apply()
             updateAll(context)
+            TimelineWidget.updateAll(context)
 
             // Post completion to cloud backend in background thread
             thread {
@@ -116,6 +117,7 @@ class AgendaWidget : AppWidgetProvider() {
             }
             prefs.edit().putString(PREF_WIDGET_REMINDERS, array.toString()).apply()
             updateAll(context)
+            TimelineWidget.updateAll(context)
 
             // Post snooze to cloud backend in background thread
             thread {

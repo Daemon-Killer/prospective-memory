@@ -29,7 +29,7 @@ class QuickCaptureWidget : AppWidgetProvider() {
     private fun bind(context: Context, manager: AppWidgetManager, id: Int) {
         val minW = manager.getAppWidgetOptions(id)
             .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
-        val layout = if (minW >= 140) R.layout.widget_bar else R.layout.widget_capture
+        val layout = if (minW == 0 || minW >= 140) R.layout.widget_bar else R.layout.widget_capture
         val views = RemoteViews(context.packageName, layout)
 
         // Default open action

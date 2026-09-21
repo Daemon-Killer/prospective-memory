@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
+import android.provider.Telephony
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
@@ -24,6 +25,7 @@ class RemyNotificationListenerService : NotificationListenerService() {
         isConnected = true
         instance = this
         Log.d(TAG, "RemyNotificationListenerService connected to Android Notification System.")
+        processActiveNotifications()
     }
 
     override fun onListenerDisconnected() {
@@ -82,12 +84,24 @@ class RemyNotificationListenerService : NotificationListenerService() {
 
         // 4. Extract text content
         val extras = notification.extras
-        val title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim() ?: ""
+        var title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim() ?: ""
+        if (title.isEmpty()) {
+            title = extras?.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString()?.trim() ?: ""
+        }
         var text = extras?.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim()
         if (text.isNullOrEmpty()) {
             text = extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim() ?: ""
         }
+        if (text.isEmpty()) {
+            val lines = extras?.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+            if (!lines.isNullOrEmpty()) {
+                text = lines.filterNotNull().joinToString(" ") { it.toString().trim() }
+            }
+        }
         val subText = extras?.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()?.trim()
+        if (!subText.isNullOrEmpty()) {
+            text = if (text.isEmpty()) subText else "$text $subText"
+        }
 
         if (title.isEmpty() && text.isEmpty()) {
             return
@@ -121,6 +135,46 @@ class RemyNotificationListenerService : NotificationListenerService() {
 
         // 8. Emit live event to React Native runtime if active
         RemySensoryModule.emitNotification(payload)
+
+        // 9. Active Notification Tray Management & Promotional Clearing
+        val autoClearPromos = prefs.getBoolean(PREF_AUTO_CLEAR_PROMOS, true)
+        val autoSnoozeNoise = prefs.getBoolean(PREF_AUTO_SNOOZE_NOISE, false)
+
+        val isWhatsapp = WHATSAPP_PACKAGES.contains(packageName) || packageName.startsWith("com.whatsapp")
+        val isSms = isSmsPackage(packageName, applicationContext)
+        val isPromo = isPromotionalNotification(packageName, title, text, applicationContext)
+
+        if (isPromo) {
+            if (isWhatsapp || isSms) {
+                // Mark conversation as read in WhatsApp / SMS inbox and clear shade
+                tryMarkAsRead(notification, applicationContext)
+                if (autoClearPromos) {
+                    if (sbn.key != null) {
+                        cancelNotification(sbn.key)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        cancelNotification(packageName, sbn.tag, sbn.id)
+                    }
+                    Log.i(TAG, "Marked as read & dismissed promotional messaging alert: $packageName (${sbn.key})")
+                }
+            } else if (autoClearPromos) {
+                if (sbn.key != null) {
+                    cancelNotification(sbn.key)
+                } else {
+                    @Suppress("DEPRECATION")
+                    cancelNotification(packageName, sbn.tag, sbn.id)
+                }
+                Log.i(TAG, "Actively dismissed promotional notification from tray: $packageName (${sbn.key})")
+            }
+        } else if (autoSnoozeNoise && isNoise(title, text)) {
+            if (sbn.key != null) {
+                snoozeNotification(sbn.key, 3600000L)
+            } else {
+                @Suppress("DEPRECATION")
+                cancelNotification(packageName, sbn.tag, sbn.id)
+            }
+            Log.i(TAG, "Actively snoozed noise notification: $packageName (${sbn.key})")
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
@@ -129,10 +183,24 @@ class RemyNotificationListenerService : NotificationListenerService() {
     }
 
     private fun isPackagePermitted(pkg: String, prefs: SharedPreferences): Boolean {
+        val normalizedPkg = pkg.trim().lowercase()
+        val autoClearPromos = prefs.getBoolean(PREF_AUTO_CLEAR_PROMOS, true)
+
+        // Always permit WhatsApp, SMS, and known shopping/food apps if autoClearPromos is active,
+        // ensuring promotional clutter from messaging and commerce apps is actively caught and cleared!
+        if (autoClearPromos && (WHATSAPP_PACKAGES.contains(normalizedPkg) ||
+                    normalizedPkg.startsWith("com.whatsapp") ||
+                    SMS_PACKAGES.contains(normalizedPkg) ||
+                    normalizedPkg.contains("messaging") ||
+                    normalizedPkg.contains(".mms") ||
+                    ECOMMERCE_AND_FOOD_PACKAGES.contains(normalizedPkg))) {
+            return true
+        }
+
         val configJson = prefs.getString(PREF_FILTER_CONFIG, null)
         if (configJson == null) {
             // Default Blacklist Mode: Block known system noise
-            return !DEFAULT_SYSTEM_BLACKLIST.contains(pkg)
+            return !DEFAULT_SYSTEM_BLACKLIST.contains(normalizedPkg)
         }
 
         return try {
@@ -145,7 +213,6 @@ class RemyNotificationListenerService : NotificationListenerService() {
             for (i in 0 until packagesArray.length()) {
                 packageSet.add(packagesArray.getString(i).trim().lowercase())
             }
-            val normalizedPkg = pkg.trim().lowercase()
 
             if (mode.equals("whitelist", ignoreCase = true)) {
                 packageSet.contains(normalizedPkg)
@@ -154,7 +221,7 @@ class RemyNotificationListenerService : NotificationListenerService() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error evaluating package filter config; falling back to blacklist", e)
-            !DEFAULT_SYSTEM_BLACKLIST.contains(pkg)
+            !DEFAULT_SYSTEM_BLACKLIST.contains(normalizedPkg)
         }
     }
 
@@ -234,6 +301,156 @@ class RemyNotificationListenerService : NotificationListenerService() {
             "com.sec.android.app.clockpackage"
         )
 
+        val WHATSAPP_PACKAGES = setOf(
+            "com.whatsapp",
+            "com.whatsapp.w4b"
+        )
+
+        val SMS_PACKAGES = setOf(
+            "com.google.android.apps.messaging",
+            "com.samsung.android.messaging",
+            "com.android.mms",
+            "com.motorola.messaging",
+            "com.oneplus.mms",
+            "com.sonyericsson.conversations",
+            "com.truecaller"
+        )
+
+        val ECOMMERCE_AND_FOOD_PACKAGES = setOf(
+            "com.swiggy.android",
+            "com.application.zomato",
+            "in.amazon.mShop.android.shopping",
+            "com.amazon.mShop.android.shopping",
+            "com.flipkart.android",
+            "com.myntra.android",
+            "com.ubercab",
+            "com.olacabs.customer",
+            "com.dominospizza",
+            "com.mcdonalds.app",
+            "com.makemytrip",
+            "com.blinkit.app",
+            "com.zeptonow.android",
+            "com.dunzo.user",
+            "com.bigbasket.mobileapp",
+            "com.tatadigital.tcp",
+            "com.meesho.supply",
+            "com.ajio.shop",
+            "com.nykaa"
+        )
+
+        private val TRANSACTIONAL_OR_ACTIONABLE_REGEX = Regex(
+            """\b(out for delivery|arriving today|arriving tomorrow|will be delivered|package arriving|driver is on the way|on the way to your address|courier out for delivery|dispatched|in transit|order shipped|package has shipped|package shipped|delivery attempt|ready for pickup|pickup ready|parcel ready|handed directly|order confirmed|order placed|preparing your order|order is being prepared|driver has arrived|cab is waiting|otp|verification code|verify code|bill due|payment due|emi due|web check-in|boarding pass|gate closes|flight departs|train departs)\b""",
+            RegexOption.IGNORE_CASE
+        )
+
+        private val PROMOTIONAL_OFFER_REGEX = Regex(
+            """\b(\d{1,3}%\s*(?:off|discount|cashback)|flat\s*(?:₹|rs\.?|inr|\$)?\s*\d+\s*(?:off|discount|cashback)?|save\s*(?:₹|rs\.?|inr|\$)?\s*\d+|(?:₹|rs\.?|inr|\$)\s*\d+\s*(?:off|discount|cashback)|use\s+code\b|coupons?\b|promo\s+codes?|vouchers?\b|discounts?\b|special\s+offers?|exclusive\s+offers?|limited\s+period\s+offers?|flash\s+sales?|mega\s+sales?|sales?\s+is\s+live|free\s+delivery|free\s+shipping|bogo\b|buy\s+1\s+get\s+1|cashbacks?\b|hurry\b.*(?:offers?|deals?|discounts?|sales?)|deals?\s+of\s+the\s+day|flat\s+discounts?|festive\s+offers?|extra\s+\d+%\s*off|claim\s+(?:your\s+)?offers?|claim\s+(?:your\s+)?rewards?|avail\s+(?:this\s+)?offers?|shop\s+now|order\s+now|explore\s+deals?|rewards?\b|win\s+(?:₹|rs\.?|inr|\$)?\s*\d+)\b""",
+            RegexOption.IGNORE_CASE
+        )
+
+        private val GENERIC_PROMO_KEYWORDS = Regex(
+            """\b(offers?|deals?|discounts?|sales?|cashbacks?|vouchers?|coupons?|promos?|promotions?|promotional|savings?|save\s*\d+)\b""",
+            RegexOption.IGNORE_CASE
+        )
+
+        private val NOISE_REGEX = Regex(
+            """\b(started following you|liked your|commented on|tagged you|shared a (?:photo|video|post)|trending on|apps? updated successfully|sync complete|download complete|battery (?:fully charged|full|low)|rate your (?:order|ride|experience|driver)|how was your)\b""",
+            RegexOption.IGNORE_CASE
+        )
+
+        fun isSmsPackage(pkg: String, context: Context): Boolean {
+            if (SMS_PACKAGES.contains(pkg)) return true
+            if (pkg.contains("messaging") || pkg.contains(".mms")) return true
+            return try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                    val defaultSms = Telephony.Sms.getDefaultSmsPackage(context)
+                    defaultSms != null && defaultSms == pkg
+                } else {
+                    false
+                }
+            } catch (e: Exception) {
+                false
+            }
+        }
+
+        fun isActionableOrTransactional(title: String, text: String): Boolean {
+            val combined = "$title $text"
+            return TRANSACTIONAL_OR_ACTIONABLE_REGEX.containsMatchIn(combined)
+        }
+
+        fun isPromotionalNotification(pkg: String, title: String, text: String, context: Context): Boolean {
+            val combined = "$title $text"
+            if (combined.isBlank()) return false
+            if (SensorySecurityFilter.isSensitiveAuth(title, text)) return false
+            if (isActionableOrTransactional(title, text)) return false
+
+            val isWhatsapp = WHATSAPP_PACKAGES.contains(pkg) || pkg.startsWith("com.whatsapp")
+            val isSms = isSmsPackage(pkg, context)
+            val isEcommerce = ECOMMERCE_AND_FOOD_PACKAGES.contains(pkg)
+
+            if (isWhatsapp || isSms) {
+                return PROMOTIONAL_OFFER_REGEX.containsMatchIn(combined) ||
+                        (GENERIC_PROMO_KEYWORDS.containsMatchIn(combined) && !isActionableOrTransactional(title, text))
+            }
+
+            if (isEcommerce) {
+                return PROMOTIONAL_OFFER_REGEX.containsMatchIn(combined) || GENERIC_PROMO_KEYWORDS.containsMatchIn(combined)
+            }
+
+            return PROMOTIONAL_OFFER_REGEX.containsMatchIn(combined)
+        }
+
+        fun isNoise(title: String, text: String): Boolean {
+            val combined = "$title $text"
+            return NOISE_REGEX.containsMatchIn(combined)
+        }
+
+        fun tryMarkAsRead(notification: Notification, context: Context): Boolean {
+            val actions = mutableListOf<Notification.Action>()
+            notification.actions?.let { actions.addAll(it) }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
+                try {
+                    val wearableExtender = Notification.WearableExtender(notification)
+                    actions.addAll(wearableExtender.actions)
+                } catch (_: Exception) {
+                }
+            }
+            if (actions.isEmpty()) return false
+
+            for (action in actions) {
+                val isSemanticMarkRead = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    action.semanticAction == Notification.Action.SEMANTIC_ACTION_MARK_AS_READ
+                } else false
+
+                val titleStr = action.title?.toString()?.trim() ?: ""
+                val isTitleMarkRead = titleStr.equals("read", ignoreCase = true) ||
+                        titleStr.equals("mark as read", ignoreCase = true) ||
+                        titleStr.equals("mark read", ignoreCase = true) ||
+                        titleStr.equals("mark as seen", ignoreCase = true) ||
+                        titleStr.equals("seen", ignoreCase = true) ||
+                        Regex("""\b(?:mark\s+(?:as\s+)?(?:read|seen)|read|seen)\b""", RegexOption.IGNORE_CASE).containsMatchIn(titleStr) ||
+                        Regex("""\b(?:leído|marcar\s+como\s+leído|lu|marquer\s+comme\s+lu|gelesen|als\s+gelesen\s+markieren|letto|lido|marcar\s+como\s+lida)\b""", RegexOption.IGNORE_CASE).containsMatchIn(titleStr)
+
+                if (isSemanticMarkRead || isTitleMarkRead) {
+                    return try {
+                        action.actionIntent?.send()
+                        Log.i(TAG, "Successfully invoked mark-as-read PendingIntent for action: $titleStr")
+                        true
+                    } catch (e: Exception) {
+                        try {
+                            action.actionIntent?.send(context, 0, null)
+                            Log.i(TAG, "Successfully invoked mark-as-read PendingIntent (with context) for action: $titleStr")
+                            true
+                        } catch (e2: Exception) {
+                            Log.e(TAG, "Failed to invoke mark-as-read action: $titleStr", e2)
+                            false
+                        }
+                    }
+                }
+            }
+            return false
+        }
+
         /**
          * Dismisses a specific status bar notification by its key.
          */
@@ -253,6 +470,110 @@ class RemyNotificationListenerService : NotificationListenerService() {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to dismiss notification ($key)", e)
                 false
+            }
+        }
+
+        /**
+         * Marks an active notification as read in the underlying app and dismisses it from tray.
+         */
+        fun markNotificationAsRead(key: String): Boolean {
+            if (key.isBlank()) return false
+            val service = instance ?: return false
+            return try {
+                val sbn = service.activeNotifications?.firstOrNull { it.key == key }
+                if (sbn != null) {
+                    val marked = tryMarkAsRead(sbn.notification, service.applicationContext)
+                    service.cancelNotification(key)
+                    Log.i(TAG, "markNotificationAsRead executed for key=$key (marked=$marked)")
+                    true
+                } else {
+                    service.cancelNotification(key)
+                    Log.i(TAG, "markNotificationAsRead: Key fallback cancelled for key=$key")
+                    true
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to mark notification as read ($key)", e)
+                false
+            }
+        }
+
+        /**
+         * Sweeps active notifications and applies autoClearPromos & autoSnoozeNoise.
+         */
+        fun processActiveNotifications() {
+            val service = instance ?: return
+            try {
+                val activeSbns = service.activeNotifications ?: return
+                val prefs = service.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val autoClearPromos = prefs.getBoolean(PREF_AUTO_CLEAR_PROMOS, true)
+                val autoSnoozeNoise = prefs.getBoolean(PREF_AUTO_SNOOZE_NOISE, false)
+
+                for (sbn in activeSbns) {
+                    val pkg = sbn.packageName ?: continue
+                    if (pkg == service.applicationContext.packageName) continue
+                    val notification = sbn.notification ?: continue
+                    val flags = notification.flags
+                    val isOngoing = (flags and Notification.FLAG_ONGOING_EVENT) != 0
+                    if (isOngoing) continue
+
+                    val extras = notification.extras
+                    var title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim() ?: ""
+                    if (title.isEmpty()) {
+                        title = extras?.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString()?.trim() ?: ""
+                    }
+                    var text = extras?.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim()
+                    if (text.isNullOrEmpty()) {
+                        text = extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim() ?: ""
+                    }
+                    if (text.isEmpty()) {
+                        val lines = extras?.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+                        if (!lines.isNullOrEmpty()) {
+                            text = lines.filterNotNull().joinToString(" ") { it.toString().trim() }
+                        }
+                    }
+                    val subText = extras?.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()?.trim()
+                    if (!subText.isNullOrEmpty()) {
+                        text = if (text.isEmpty()) subText else "$text $subText"
+                    }
+
+                    if (SensorySecurityFilter.isSensitiveAuth(title, text)) continue
+
+                    val isWhatsapp = WHATSAPP_PACKAGES.contains(pkg) || pkg.startsWith("com.whatsapp")
+                    val isSms = isSmsPackage(pkg, service.applicationContext)
+                    val isPromo = isPromotionalNotification(pkg, title, text, service.applicationContext)
+
+                    if (isPromo) {
+                        if (isWhatsapp || isSms) {
+                            tryMarkAsRead(notification, service.applicationContext)
+                            if (autoClearPromos) {
+                                if (sbn.key != null) {
+                                    service.cancelNotification(sbn.key)
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    service.cancelNotification(pkg, sbn.tag, sbn.id)
+                                }
+                                Log.i(TAG, "processActive: Marked read & dismissed promo msg: $pkg (${sbn.key})")
+                            }
+                        } else if (autoClearPromos) {
+                            if (sbn.key != null) {
+                                service.cancelNotification(sbn.key)
+                            } else {
+                                @Suppress("DEPRECATION")
+                                service.cancelNotification(pkg, sbn.tag, sbn.id)
+                            }
+                            Log.i(TAG, "processActive: Dismissed promo from tray: $pkg (${sbn.key})")
+                        }
+                    } else if (autoSnoozeNoise && isNoise(title, text)) {
+                        if (sbn.key != null) {
+                            snoozeNotification(sbn.key, 3600000L)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            service.cancelNotification(pkg, sbn.tag, sbn.id)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to process active notifications", e)
             }
         }
 

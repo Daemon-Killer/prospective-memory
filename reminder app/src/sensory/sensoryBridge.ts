@@ -18,8 +18,10 @@ export class SensoryBridgeService implements ISensoryBridge {
   private mockListeners: Set<(n: RawNotificationPayload) => void> = new Set();
   private mockDismissedKeys: string[] = [];
   private mockSnoozedKeys: Array<{ key: string; durationMs: number }> = [];
+  private mockMarkedAsReadKeys: string[] = [];
   private mockAutoClearPromos: boolean = true;
   private mockAutoSnoozeNoise: boolean = false;
+  private mockPermissionGranted: boolean = true;
 
   constructor() {
     if (Platform.OS === 'android' && NativeModules?.RemySensoryModule) {
@@ -37,7 +39,7 @@ export class SensoryBridgeService implements ISensoryBridge {
 
   async isPermissionGranted(): Promise<boolean> {
     if (Platform.OS !== 'android' || !this.module?.isPermissionGranted) {
-      return false;
+      return this.mockPermissionGranted;
     }
     try {
       return await this.module.isPermissionGranted();
@@ -48,7 +50,7 @@ export class SensoryBridgeService implements ISensoryBridge {
 
   async requestPermission(): Promise<boolean> {
     if (Platform.OS !== 'android' || !this.module?.requestPermission) {
-      return false;
+      return this.mockPermissionGranted;
     }
     try {
       return await this.module.requestPermission();
@@ -252,6 +254,7 @@ export class SensoryBridgeService implements ISensoryBridge {
         if (drained.length > 0) {
           callback(drained);
         }
+        await this.processActiveNotifications();
       }
     };
 
@@ -263,6 +266,7 @@ export class SensoryBridgeService implements ISensoryBridge {
         callback(initial);
       }
     });
+    this.processActiveNotifications().catch(() => {});
 
     return () => {
       subscription.remove();
@@ -280,6 +284,51 @@ export class SensoryBridgeService implements ISensoryBridge {
     }
     try {
       return await this.module.dismissNotification(key);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Marks a notification as read via semantic action (e.g. WhatsApp / SMS) and clears it from tray.
+   */
+  async markAsRead(key: string): Promise<boolean> {
+    if (!key) return false;
+    if (Platform.OS !== 'android' || !this.module?.markAsRead) {
+      this.mockMarkedAsReadKeys.push(key);
+      this.mockDismissedKeys.push(key);
+      return true;
+    }
+    try {
+      return await this.module.markAsRead(key);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Sweeps active notifications and applies auto-clearing / mark-as-read for promotional alerts.
+   */
+  async processActiveNotifications(): Promise<boolean> {
+    if (Platform.OS !== 'android' || !this.module?.processActiveNotifications) {
+      return true;
+    }
+    try {
+      return await this.module.processActiveNotifications();
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Directly launches Android Settings for granting Notification Listener Access to Remy.
+   */
+  async openNotificationListenerSettings(): Promise<boolean> {
+    if (Platform.OS !== 'android' || !this.module?.openNotificationListenerSettings) {
+      return true;
+    }
+    try {
+      return await this.module.openNotificationListenerSettings();
     } catch {
       return false;
     }
@@ -384,9 +433,18 @@ export class SensoryBridgeService implements ISensoryBridge {
     return [...this.mockSnoozedKeys];
   }
 
+  getMockMarkedAsReadKeys(): string[] {
+    return [...this.mockMarkedAsReadKeys];
+  }
+
+  setMockPermissionGranted(granted: boolean): void {
+    this.mockPermissionGranted = granted;
+  }
+
   clearMockTray(): void {
     this.mockDismissedKeys = [];
     this.mockSnoozedKeys = [];
+    this.mockMarkedAsReadKeys = [];
   }
 }
 

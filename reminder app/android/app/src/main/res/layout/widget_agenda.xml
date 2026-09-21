@@ -57,7 +57,7 @@
             android:textStyle="bold" />
     </LinearLayout>
 
-    <View
+    <ImageView
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:background="#222222" />
@@ -134,7 +134,7 @@
             android:textSize="10sp"
             android:visibility="gone" />
 
-        <View
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1" />
@@ -178,7 +178,7 @@
                 android:textStyle="bold"
                 android:typeface="monospace" />
 
-            <View
+            <FrameLayout
                 android:layout_width="0dp"
                 android:layout_height="1dp"
                 android:layout_weight="1" />
