@@ -324,7 +324,7 @@ describe('Notification Tray Clearing, Snoozing & Important Ingress Suite', () =>
       });
     });
 
-    test('actively snoozes noise notification when autoSnoozeNoise is enabled', async () => {
+    test('delegates noise snoozing to Native layer (no longer snoozes via JS)', async () => {
       const noiseKey = '0|com.social.app|808|null|77777';
       const simNoise: RawNotificationPayload = {
         id: 'noise-alert-1',
@@ -354,7 +354,7 @@ describe('Notification Tray Clearing, Snoozing & Important Ingress Suite', () =>
 
       if (sensoryBridge.getMockSnoozedKeys) {
         const snoozed = sensoryBridge.getMockSnoozedKeys();
-        expect(snoozed.some((s) => s.key === noiseKey)).toBe(true);
+        expect(snoozed.some((s) => s.key === noiseKey)).toBe(false);
       }
 
       act(() => {

@@ -166,14 +166,17 @@ class RemyNotificationListenerService : NotificationListenerService() {
                 }
                 Log.i(TAG, "Actively dismissed promotional notification from tray: $packageName (${sbn.key})")
             }
-        } else if (autoSnoozeNoise && isNoise(title, text)) {
+        } else if (isNoise(title, text) && autoSnoozeNoise) {
             if (sbn.key != null) {
-                snoozeNotification(sbn.key, 3600000L)
-            } else {
-                @Suppress("DEPRECATION")
-                cancelNotification(packageName, sbn.tag, sbn.id)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    snoozeNotification(sbn.key, 3600000L)
+                    Log.i(TAG, "Snoozed noise notification from tray: $packageName (${sbn.key})")
+                } else {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        cancelNotification(sbn.key)
+                    }
+                }
             }
-            Log.i(TAG, "Actively snoozed noise notification: $packageName (${sbn.key})")
         }
     }
 
@@ -563,12 +566,16 @@ class RemyNotificationListenerService : NotificationListenerService() {
                             }
                             Log.i(TAG, "processActive: Dismissed promo from tray: $pkg (${sbn.key})")
                         }
-                    } else if (autoSnoozeNoise && isNoise(title, text)) {
+                    } else if (isNoise(title, text) && autoSnoozeNoise) {
                         if (sbn.key != null) {
-                            snoozeNotification(sbn.key, 3600000L)
-                        } else {
-                            @Suppress("DEPRECATION")
-                            service.cancelNotification(pkg, sbn.tag, sbn.id)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                service.snoozeNotification(sbn.key, 3600000L)
+                                Log.i(TAG, "processActive: Snoozed noise notification from tray: $pkg (${sbn.key})")
+                            } else {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                    service.cancelNotification(sbn.key)
+                                }
+                            }
                         }
                     }
                 }

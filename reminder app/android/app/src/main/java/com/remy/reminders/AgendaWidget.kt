@@ -74,6 +74,13 @@ class AgendaWidget : AppWidgetProvider() {
                     obj.put("status", "completed")
                     obj.put("completedAt", nowIso)
                     obj.put("updatedAt", nowIso)
+                    
+                    val notifId = obj.optString("notificationId", "")
+                    if (notifId.isNotEmpty() && notifId != "null") {
+                        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                        nm.cancel(notifId, 0)
+                        cancelExpoScheduledNotification(context, notifId)
+                    }
                     break
                 }
             }
@@ -97,31 +104,50 @@ class AgendaWidget : AppWidgetProvider() {
             val array = JSONArray(rawJson)
             val now = Date()
             val nowIso = formatIso(now)
-            val cal = Calendar.getInstance().apply {
-                time = now
-                add(Calendar.MINUTE, 15)
-            }
-            val targetDueDateIso = formatIso(cal.time)
+            
+            var targetDueDateIso = ""
 
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
                 if (obj.optString("id") == reminderId) {
+                    val dueStr = obj.optString("dueDate", "")
+                    val due = parseIso(dueStr)
+                    val baseTime = if (due.after(now)) due else now
+                    
+                    val cal = Calendar.getInstance().apply {
+                        time = baseTime
+                        add(Calendar.MINUTE, 15)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }
+                    targetDueDateIso = formatIso(cal.time)
+
                     obj.put("dueDate", targetDueDateIso)
                     obj.put("status", "snoozed")
                     obj.put("snoozeCount", obj.optInt("snoozeCount", 0) + 1)
                     obj.put("lastSnoozedAt", nowIso)
                     obj.put("updatedAt", nowIso)
                     obj.put("armed", true)
+                    
+                    val notifId = obj.optString("notificationId", "")
+                    if (notifId.isNotEmpty() && notifId != "null") {
+                        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                        nm.cancel(notifId, 0)
+                        cancelExpoScheduledNotification(context, notifId)
+                    }
                     break
                 }
             }
-            prefs.edit().putString(PREF_WIDGET_REMINDERS, array.toString()).apply()
-            updateAll(context)
-            TimelineWidget.updateAll(context)
+            
+            if (targetDueDateIso.isNotEmpty()) {
+                prefs.edit().putString(PREF_WIDGET_REMINDERS, array.toString()).apply()
+                updateAll(context)
+                TimelineWidget.updateAll(context)
 
-            // Post snooze to cloud backend in background thread
-            thread {
-                postSnoozeToBackend(context, reminderId, targetDueDateIso)
+                // Post snooze to cloud backend in background thread
+                thread {
+                    postSnoozeToBackend(context, reminderId, targetDueDateIso)
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -278,6 +304,48 @@ class AgendaWidget : AppWidgetProvider() {
         }
 
         manager.updateAppWidget(id, views)
+    }
+
+    private fun cancelExpoScheduledNotification(context: Context, identifier: String) {
+        try {
+            val intent = Intent("expo.modules.notifications.NOTIFICATION_EVENT")
+            val uri = android.net.Uri.Builder()
+                .scheme("expo-notifications")
+                .authority("notifications")
+                .appendPath("scheduled")
+                .appendPath(identifier)
+                .appendPath("trigger")
+                .build()
+            intent.data = uri
+            
+            val resolveInfos = context.packageManager.queryBroadcastReceivers(intent, 0)
+            val designated = resolveInfos.firstOrNull { it.activityInfo.packageName == context.packageName } ?: resolveInfos.firstOrNull()
+            designated?.let {
+                intent.component = android.content.ComponentName(it.activityInfo.packageName, it.activityInfo.name)
+            }
+            
+            intent.putExtra("type", "trigger") // EVENT_TYPE_KEY
+            intent.putExtra("identifier", identifier) // IDENTIFIER_KEY
+            
+            val mutableFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+            val requestCode = intent.component?.className?.hashCode() ?: try {
+                Class.forName("expo.modules.notifications.service.NotificationsService").hashCode()
+            } catch (e: Exception) {
+                "expo.modules.notifications.service.NotificationsService".hashCode()
+            }
+            
+            val pi = PendingIntent.getBroadcast(
+                context,
+                requestCode,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or mutableFlag
+            )
+            
+            val am = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            am.cancel(pi)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun postCompleteToBackend(context: Context, reminderId: String) {

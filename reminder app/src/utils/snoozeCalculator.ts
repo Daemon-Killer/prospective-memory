@@ -74,15 +74,16 @@ export function calculate1Hour(
  * If current time is already >= 18:30:00 (within 30m or past 19:00),
  * rolls over to tomorrow at 19:00:00.
  */
-export function calculateThisEvening(now: Date = new Date()): Date {
-  const target = new Date(now.getTime());
+export function calculateThisEvening(now: Date = new Date(), dueDate?: Date | string | null): Date {
+  const base = getBaseTime(now, dueDate);
+  const target = new Date(base.getTime());
   target.setHours(19, 0, 0, 0);
 
   // Rollover threshold: 18:30:00.000 today
-  const rolloverThreshold = new Date(now.getTime());
+  const rolloverThreshold = new Date(base.getTime());
   rolloverThreshold.setHours(18, 30, 0, 0);
 
-  if (now.getTime() >= rolloverThreshold.getTime()) {
+  if (base.getTime() >= rolloverThreshold.getTime()) {
     target.setDate(target.getDate() + 1);
     target.setHours(19, 0, 0, 0);
   }
@@ -95,8 +96,9 @@ export function calculateThisEvening(now: Date = new Date()): Date {
  * Advances calendar to the next day at 09:00:00 local time.
  * Native Date.setDate handles month boundaries, leap years, and year-ends.
  */
-export function calculateTomorrowMorning(now: Date = new Date()): Date {
-  const target = new Date(now.getTime());
+export function calculateTomorrowMorning(now: Date = new Date(), dueDate?: Date | string | null): Date {
+  const base = getBaseTime(now, dueDate);
+  const target = new Date(base.getTime());
   target.setDate(target.getDate() + 1);
   target.setHours(9, 0, 0, 0);
   return target;
@@ -109,15 +111,16 @@ export function calculateTomorrowMorning(now: Date = new Date()): Date {
  * - Saturday before 09:00: schedules for today Saturday at 09:00.
  * - Saturday at or after 09:00: advances 7 days to next Saturday at 09:00.
  */
-export function calculateWeekend(now: Date = new Date()): Date {
-  const target = new Date(now.getTime());
+export function calculateWeekend(now: Date = new Date(), dueDate?: Date | string | null): Date {
+  const base = getBaseTime(now, dueDate);
+  const target = new Date(base.getTime());
   const dayOfWeek = target.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
 
   if (dayOfWeek === 6) {
-    const saturdayNineAm = new Date(now.getTime());
+    const saturdayNineAm = new Date(base.getTime());
     saturdayNineAm.setHours(9, 0, 0, 0);
 
-    if (now.getTime() < saturdayNineAm.getTime()) {
+    if (base.getTime() < saturdayNineAm.getTime()) {
       return saturdayNineAm;
     } else {
       saturdayNineAm.setDate(saturdayNineAm.getDate() + 7);
@@ -222,13 +225,13 @@ export function calculateSnoozeTime(
       return calculate1Hour(now, options.dueDate);
 
     case 'evening':
-      return calculateThisEvening(now);
+      return calculateThisEvening(now, options.dueDate);
 
     case 'tomorrow_morning':
-      return calculateTomorrowMorning(now);
+      return calculateTomorrowMorning(now, options.dueDate);
 
     case 'weekend':
-      return calculateWeekend(now);
+      return calculateWeekend(now, options.dueDate);
 
     case 'custom': {
       if (options.customDate) {

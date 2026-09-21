@@ -65,20 +65,36 @@ export function extractDate(text: string, now: Date = new Date()): ExtractedDate
     return { date: target, armed: true, rawCue: clockMatch[0].trim() };
   }
 
-  // 4. Calendar date: "20-Sep-2026", "20-Sep", "Sep 20", "20 September", "25th September"
+  // 4. Calendar date: "20-Sep-2026", "20-Sep", "Sep 20", "20 September", "25th September", "September 25th"
   const calMatch = text.match(
-    /\b(\d{1,2})(?:st|nd|rd|th)?[-/ ](Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-/ ]?(\d{4})?\b/i
+    /\b(?:(\d{1,2})(?:st|nd|rd|th)?[-/ ](Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*|(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-/ ](\d{1,2})(?:st|nd|rd|th)?)[-/ ]?(\d{4})?\b/i
   );
   if (calMatch) {
-    const day = parseInt(calMatch[1], 10);
-    const month = MONTHS_MAP[calMatch[2].toLowerCase().slice(0, 3)];
-    const year = calMatch[3] ? parseInt(calMatch[3], 10) : now.getFullYear();
+    const dayStr = calMatch[1] || calMatch[4];
+    const monthStr = calMatch[2] || calMatch[3];
+    const day = parseInt(dayStr, 10);
+    const month = MONTHS_MAP[monthStr.toLowerCase().slice(0, 3)];
+    const year = calMatch[5] ? parseInt(calMatch[5], 10) : now.getFullYear();
 
     const target = new Date(year, month, day, 9, 0, 0, 0); // Standard 09:00 morning alarm
+    
     // If year omitted and date is >30 days in the past, roll forward to next year
-    if (!calMatch[3] && target.getTime() < now.getTime() - 30 * 86400000) {
+    if (!calMatch[5] && target.getTime() < now.getTime() - 30 * 86400000) {
       target.setFullYear(year + 1);
     }
+    
+    // Fix past-date trap: if it evaluates to today at 09:00 but that time has already passed
+    if (target.getFullYear() === now.getFullYear() && 
+        target.getMonth() === now.getMonth() && 
+        target.getDate() === now.getDate() && 
+        target.getTime() <= now.getTime()) {
+      target.setHours(19, 0, 0, 0); // Bump to this evening
+      if (now.getTime() >= target.getTime()) {
+        target.setTime(now.getTime() + 60 * 60 * 1000); // Or +1 hour if evening has passed
+        target.setSeconds(0, 0);
+      }
+    }
+    
     return { date: target, armed: true, rawCue: calMatch[0].trim() };
   }
 

@@ -227,8 +227,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           if (autoClearPromos) {
             await handlePromoClearing(payload);
           }
-        } else if (result.stream === 'noise' && autoSnoozeNoise && payload.key) {
-          await sensoryBridge.snoozeNotification(payload.key, 3600000);
         }
       } catch (err) {
         console.warn('HomeScreen: Error routing live sensory notification:', err);
@@ -282,8 +280,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               await sensoryBridge.dismissNotification(payload.key);
             }
           }
-        } else if (result.stream === 'noise' && autoSnoozeNoise && payload.key) {
-          await sensoryBridge.snoozeNotification(payload.key, 3600000);
         }
       }
     } catch (err) {

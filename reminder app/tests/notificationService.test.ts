@@ -297,7 +297,7 @@ describe('NotificationService & Background Task Suite', () => {
 
       expect(mockNotifications.scheduleNotificationAsync).toHaveBeenCalledWith(
         expect.objectContaining({
-          trigger: expect.objectContaining({
+          content: expect.objectContaining({
             channelId: REMINDER_CHANNEL_ID,
           }),
         })
