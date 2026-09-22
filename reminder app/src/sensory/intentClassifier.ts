@@ -9,6 +9,7 @@ import {
   ClassificationResult,
   QuarantineReason,
   RawNotificationPayload,
+  ScamReason,
 } from './types';
 import { parsePromo } from './promoParser';
 import { extractDate } from './dateExtractor';
@@ -17,6 +18,89 @@ import { extractDate } from './dateExtractor';
 const OTP_KEYWORDS = /\b(?:otp|one[- ]time[- ]password|one[- ]time[- ]pin|verification code|verify code|auth[- ]code|security pin|login pin|secret code|password reset code)\b/i;
 const OTP_PHRASES = /\b(?:\d{4,8})\s+(?:is your (?:otp|verification|secret code|one[- ]time|login code)|valid for)|(?:do not share|never share|never disclose)\b/i;
 const SENSITIVE_TOKEN_PATTERN = /\b(?:otp|pin|passcode|code)\s*[:=]\s*\d{4,8}\b/i;
+
+// Strict Guardrails: Genuine Banking Transactional Debits / Credits
+export const BANK_TRANSACTION_REGEX = /\b(?:debited (?:for|by|from|with)|credited (?:to|with)|a\/c\s*(?:no\.?)?\s*[\w*xX]+\s*(?:is\s*)?(?:debited|credited)|acct\s*(?:is\s*)?(?:debited|credited)|(?:inr|rs\.?|₹|\$)\s*[\d,]+(?:\.\d{2})?\s*(?:debited|credited)|avail(?:able)?\s*bal(?:ance)?|closing\s*bal(?:ance)?|clear\s*bal(?:ance)?|upi\s*(?:ref|txn|transaction)|spent\s*on\s*(?:credit|debit)?\s*card|atm\s*withdrawn?|pos\s*txn|card\s*ending\s*(?:in\s*)?[\d*xX]{4})\b/i;
+
+export function isBankTransaction(title: string, text: string): boolean {
+  const combined = `${title} ${text}`;
+  return BANK_TRANSACTION_REGEX.test(combined);
+}
+
+// Stage 0.5: Scam & Fraud Detection Patterns
+export const LOTTERY_SCAM_REGEX = /\b(?:congratulations|congrats|hurry|lucky winner|dear winner|selected)\b.*(?:won|winner|winning|selected for|claim your)\b.*(?:lottery|jackpot|lucky draw|bumper prize|cash prize|reward prize|kbc|car prize|crore|lakhs?|fortune|award)|\b(?:won|winner of|claim)\s+(?:a\s+)?(?:lottery|jackpot|bumper prize|lucky draw|kbc prize|cash reward|free gift)\b|\b(?:you have won|you won)\s+(?:a\s+)?(?:lottery|jackpot|lucky draw|bumper prize|cash prize|cash reward|reward|prize money|fortune|crore|lakhs?|free\s+(?:iphone|car|bike|cash))\b|\bwon a lucky draw\b|\b(?:kbc|kaun banega crorepati)\b.*(?:lottery|prize|winner|number|head office)|\bclaim your (?:lottery|jackpot|prize money|winnings|free car)\b|\b(?:selected\s+for|win\s+a)\s+(?:free\s+)?(?:iphone|car|bike|tata safari|cash)\b.*(?:click|call|claim)/i;
+
+export const FAKE_KYC_SUSPENSION_REGEX = /\b(?:pan(?: card)?|aadhaar(?: card)?|kyc|(?:bank\s+)?(?:account|a\/c|acct)|sim(?: card)?|netbanking|yono|debit card|credit card)\b.*(?:suspended|blocked|deactivated|expired|restricted|freeze|inactive|terminated)\b.*(?:click|visit|update|verify|call|link|apk|contact)|\b(?:dear (?:customer|user)|urgent:?|notice:?)\b.*(?:pan card|kyc|aadhaar)\b.*(?:suspended|blocked|deactivated|expire|invalid|terminated)|\b(?:update|complete|verify)\s+(?:your\s+)?(?:kyc|pan card|aadhaar)\s+(?:immediately|urgently|today|within \d+ hours?)\s+(?:or|otherwise)\s+(?:your\s+)?(?:account|a\/c|acct|sim|card|services?)\s+(?:will be|is)\s+(?:blocked|suspended|deactivated|closed)|\be[- ]?kyc\s+(?:pending|expired|verification required|suspended)\b|\b(?:yono|sbi|hdfc|icici|axis|pnb|paytm|airtel)\s+(?:account|a\/c|acct|rewards?)\b.*(?:blocked|suspended|update kyc|redeem points.*(?:link|http|bit\.ly))|\byour\s+(?:sbi|hdfc|icici|axis|bank)\s+(?:account|a\/c|acct)\s+(?:has been|is)\s+(?:suspended|blocked)\b/i;
+
+export const DISCONNECTION_THREAT_REGEX = /\b(?:electricity|power|light)\s+(?:power\s+)?(?:will be|to be)\s+(?:disconnect(?:ed)?|cut(?: off)?)\s+(?:tonight|today|by \d+[:.]\d+|\d+\s*(?:pm|am))\b|\b(?:previous|last)\s+month\s+bill\s+not\s+updated.*(?:disconnect|officer|call)|\belectricity (?:officer|helpline|department)\b.*(?:\d{10}|\+91\d{10})|\bpower (?:supply )?(?:will be )?disconnected\b|\belectricity bill\b.*(?:disconnected tonight|contact power officer|call electricity officer)/i;
+
+export const LOAN_TRAP_REGEX = /\b(?:pre[- ]approved|instant)\s+(?:personal\s+)?loan\s+of\s+(?:₹|rs\.?|inr)?\s*[\d,]+\s*(?:approved|disbursed|credited|waiting|ready)\b.*(?:no\s+(?:cibil|documents?|doc|verification|income proof)|without documents?|apply now|click|link)|\b(?:approved\s+loan|claim\s+your\s+loan|get\s+instant\s+cash\s+loan)\b.*(?:no cibil|0% interest|no income proof|click|bit\.ly)|\bcredit card\b.*(?:limit of\s+(?:₹|rs\.?|inr)?\s*[\d,]+).*(?:pre[- ]approved|free|without (?:income proof|documents?)|no annual fee|apply now.*(?:bit\.ly|link|click))|\b(?:instant\s+loan\s+in\s+\d+\s+(?:mins?|minutes?)|paperless\s+loan|loan\s+disbursal\s+pending)\b.*(?:click|apply|link)|\b(?:bad cibil|low cibil)\s+loan\s+approved\b/i;
+
+export const SUSPICIOUS_APK_LINK_REGEX = /\b(?:download|install|update)\b.*\.apk\b|\b(?:whatsapp\s+pink|payment\s+app\s+update|kyc\s+app)\b.*\.apk|\b(?:bit\.ly|tinyurl\.com|is\.gd|cutt\.ly|t\.co|rb\.gy|shorturl\.at|tiny\.cc|cutt\.us|surl\.li)\b.*(?:apk|kyc|pan|winner|loan|claim|bonus|suspend|reward|gift|free|earn|job)|\b(?:apk download|install apk)\b/i;
+
+export const CRYPTO_JOB_SCAM_REGEX = /\b(?:earn|make)\s+(?:₹|rs\.?|inr|\$)?\s*[\d,]+(?:\s*-\s*(?:₹|rs\.?|inr|\$)?\s*[\d,]+)?\s*(?:daily|per day|every day)\s*(?:working from home|work from home|from home|online|part[- ]time)\b|\b(?:part[- ]time\s+job|work(?:ing)?\s+from\s+home)\b.*(?:liking\s+(?:youtube|videos?)|rating\s+(?:hotels?|apps?)|google\s+maps|reviews?).*(?:telegram|whatsapp|\+91|\d{10})|\b(?:guaranteed|assured)\s+(?:returns?|profit)\s+of\s+\d+%\b|\b(?:double\s+your\s+money|multiply\s+investment)\s+in\s+\d+\s+(?:days?|hours?|weeks?)\b|\b(?:crypto\s+mining|bitcoin\s+investment|forex\s+trading\s+signals?)\b.*(?:guaranteed|daily profit|join telegram|telegram channel)|\b(?:work(?:ing)?\s+from\s+home|part[- ]time\s+job)\s+offer.*(?:daily payout|earn up to \d+)/i;
+
+export const GAMBLING_SPAM_REGEX = /\b(?:play\s+online\s+(?:rummy|casino|teen patti|poker)|bet\s+on\s+(?:ipl|cricket|casino))\b.*(?:deposit\s+(?:₹|rs\.?|inr)?\s*\d+|get\s+(?:₹|rs\.?|inr)?\s*\d+\s+free|bonus|bonus\s+code)|\b(?:claim\s+100%\s+deposit\s+bonus|register\s+and\s+get\s+(?:₹|rs\.?|inr)?\s*\d+\s+cash)\b/i;
+
+export const TELEMARKETING_SPAM_REGEX = /\b(?:exclusive\s+plots?|villa\s+plots?|luxury\s+villas?|open\s+plots?)\s+(?:near|at|in)\b.*(?:starting\s+(?:at\s+)?(?:₹|rs\.?|inr)?\s*[\d.]+\s*(?:lakhs?|cr)|call\s+now|book\s+site\s+visit)|\b(?:escorts?|call\s+girls?|massage\s+service)\b.*(?:\d{10}|\+91)|\b(?:free\s+stock\s+tips?|sure\s+shot\s+calls?|jackpot\s+calls?|nifty\s+calls?|banknifty\s+calls?|multibagger\s+stocks?)\b.*(?:join\s+telegram|call\s+now|whatsapp)/i;
+
+export function checkScam(
+  title: string,
+  text: string,
+  _pkg?: string
+): { isScam: boolean; reason?: ScamReason } {
+  const combined = `${title} ${text}`;
+  if (!combined.trim()) return { isScam: false };
+
+  // Guardrail 1: Sensitive authentication tokens / OTPs must never be marked as scam
+  if (checkQuarantine(title, text).quarantined) {
+    return { isScam: false };
+  }
+
+  // Phishing indicators take priority over superficial bank or delivery mentions
+  const hasKycSuspension = FAKE_KYC_SUSPENSION_REGEX.test(combined);
+  const hasSuspiciousApkOrLink = SUSPICIOUS_APK_LINK_REGEX.test(combined);
+
+  // Guardrail 2: Genuine bank transaction receipts must never be marked as scam,
+  // UNLESS they contain fake account suspension or APK/phishing links impersonating a bank.
+  if (isBankTransaction(title, text) && !hasKycSuspension && !hasSuspiciousApkOrLink) {
+    return { isScam: false };
+  }
+
+  // Guardrail 3: Genuine delivery tracking alerts must never be marked as scam,
+  // UNLESS they contain suspicious APKs or phishing links.
+  if (DELIVERY_REGEX.test(combined) && !hasSuspiciousApkOrLink && !hasKycSuspension) {
+    return { isScam: false };
+  }
+
+  // Check specific scam categories
+  if (LOTTERY_SCAM_REGEX.test(combined)) {
+    return { isScam: true, reason: 'lottery_fraud' };
+  }
+  if (FAKE_KYC_SUSPENSION_REGEX.test(combined)) {
+    return { isScam: true, reason: 'fake_kyc_suspension' };
+  }
+  if (DISCONNECTION_THREAT_REGEX.test(combined)) {
+    return { isScam: true, reason: 'disconnection_threat' };
+  }
+  if (LOAN_TRAP_REGEX.test(combined)) {
+    return { isScam: true, reason: 'unauthorized_loan_trap' };
+  }
+  if (SUSPICIOUS_APK_LINK_REGEX.test(combined)) {
+    return { isScam: true, reason: 'suspicious_apk_or_link' };
+  }
+  if (CRYPTO_JOB_SCAM_REGEX.test(combined)) {
+    return { isScam: true, reason: 'crypto_investment_scheme' };
+  }
+  if (GAMBLING_SPAM_REGEX.test(combined)) {
+    return { isScam: true, reason: 'gambling_spam' };
+  }
+  if (TELEMARKETING_SPAM_REGEX.test(combined)) {
+    return { isScam: true, reason: 'aggressive_telemarketing' };
+  }
+
+  return { isScam: false };
+}
 
 // Stage 1: Noise Patterns
 const PAST_TRANSACTION_REGEX = /\b(?:paid (?:₹|\$|Rs\.?|INR)|payment of (?:₹|\$|Rs\.?|INR|\d+).*was successful|debited (?:for|by)|debited from|credited (?:with|to)|package delivered|order delivered|handed directly to|delivered:)\b/i;
@@ -113,6 +197,7 @@ function resolveMerchant(title: string, packageName?: string): string {
 export function classifyNotification(payload: RawNotificationPayload, now: Date = new Date()): ClassificationResult {
   const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const { title, text, packageName } = payload;
+  const combined = `${title} ${text}`;
 
   // Stage 0: Security & OTP Quarantine Gate
   const quarantine = checkQuarantine(title, text);
@@ -122,6 +207,21 @@ export function classifyNotification(payload: RawNotificationPayload, now: Date 
       stream: 'quarantined',
       quarantineReason: quarantine.reason,
       confidence: 1.0,
+      evaluationTimeMs: elapsed,
+    };
+  }
+
+  // Stage 0.5: Scam & Fraud Detection Gate
+  const scamCheck = checkScam(title, text, packageName);
+  if (scamCheck.isScam) {
+    const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime;
+    return {
+      stream: 'scam',
+      scam: {
+        reason: scamCheck.reason!,
+        confidence: 0.98,
+      },
+      confidence: 0.98,
       evaluationTimeMs: elapsed,
     };
   }
@@ -151,7 +251,6 @@ export function classifyNotification(payload: RawNotificationPayload, now: Date 
   }
 
   // Stage 3: Actionable To-Do Engine
-  const combined = `${title} ${text}`;
   const merchant = resolveMerchant(title, packageName);
 
   // 3A. Delivery & Logistics

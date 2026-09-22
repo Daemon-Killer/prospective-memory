@@ -185,33 +185,43 @@ interface ReminderDao {
     suspend fun upsertAll(reminders: List<ReminderEntity>)
 
     /**
-     * Last-Write-Wins (LWW) Batch Ingestion from Mobile Host.
-     * Reconciles incoming reminders against local records atomically.
+     * Total count of non-deleted reminders in SQLite (including completed reminders).
+     * Used for full-sync vs incremental-sync decisions.
+     */
+    @Query("SELECT COUNT(*) FROM reminders WHERE isDeleted = 0")
+    suspend fun getLiveReminderCount(): Int
+
+    /**
+     * Last-Write-Wins (LWW) Batch Ingestion from Mobile Host or Cloud Backend.
+     * Reconciles incoming reminders against local records atomically while preserving local notificationId.
      */
     @Transaction
     suspend fun reconcileIncomingBatch(incoming: List<ReminderEntity>) {
         for (item in incoming) {
             val local = getReminderById(item.id)
             if (local == null) {
-                // New record from phone: insert cleanly as SYNCED
-                upsert(item.copy(syncStatus = ReminderEntity.SYNC_STATUS_SYNCED))
+                // New record from phone/cloud: only insert if not already a soft-deleted tombstone
+                if (!item.isDeleted) {
+                    upsert(item.copy(syncStatus = ReminderEntity.SYNC_STATUS_SYNCED))
+                }
             } else {
+                val preservedNotificationId = local.notificationId
                 if (local.syncStatus == ReminderEntity.SYNC_STATUS_PENDING_UPLOAD) {
                     // Local record has uncommitted offline mutations
                     if (item.updatedAt > local.updatedAt) {
-                        // Phone has strictly newer update: overwrite local
-                        upsert(item.copy(syncStatus = ReminderEntity.SYNC_STATUS_SYNCED))
+                        // Remote has strictly newer update: overwrite local
+                        upsert(item.copy(syncStatus = ReminderEntity.SYNC_STATUS_SYNCED, notificationId = preservedNotificationId))
                     } else if (item.updatedAt == local.updatedAt) {
                         // Tie-breaker: completed status takes precedence
                         if (item.status == ReminderEntity.STATUS_COMPLETED) {
-                            upsert(item.copy(syncStatus = ReminderEntity.SYNC_STATUS_SYNCED))
+                            upsert(item.copy(syncStatus = ReminderEntity.SYNC_STATUS_SYNCED, notificationId = preservedNotificationId))
                         }
                     }
                     // If local is newer (local.updatedAt > item.updatedAt): retain local mutation
                 } else {
-                    // Local record was cleanly SYNCED: accept phone update if newer or equal
+                    // Local record was cleanly SYNCED: accept remote update if newer or equal
                     if (item.updatedAt >= local.updatedAt) {
-                        upsert(item.copy(syncStatus = ReminderEntity.SYNC_STATUS_SYNCED))
+                        upsert(item.copy(syncStatus = ReminderEntity.SYNC_STATUS_SYNCED, notificationId = preservedNotificationId))
                     }
                 }
             }
@@ -225,6 +235,15 @@ interface ReminderDao {
      */
     @Query("DELETE FROM reminders WHERE isDeleted = 1 AND updatedAt < :cutoffMillis")
     suspend fun purgeOldTombstones(cutoffMillis: Long): Int
+
+    /**
+     * Prunes soft-deleted tombstones that have been fully acknowledged and marked SYNCED.
+     * Reclaims SQLite storage while ensuring uncommitted deletions are preserved.
+     *
+     * @return Number of pruned tombstone rows
+     */
+    @Query("DELETE FROM reminders WHERE isDeleted = 1 AND syncStatus = 'SYNCED'")
+    suspend fun pruneSyncedTombstones(): Int
 
     /**
      * Clears all reminders from the database (for testing and reset).

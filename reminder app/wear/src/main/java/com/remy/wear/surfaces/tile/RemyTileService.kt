@@ -8,6 +8,7 @@ import androidx.wear.tiles.TileBuilders.Tile
 import androidx.wear.tiles.TileService
 import com.google.common.util.concurrent.ListenableFuture
 import com.remy.wear.data.local.RemyDatabase
+import com.remy.wear.sync.RemyCloudSyncService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -59,6 +60,9 @@ class RemyTileService : TileService() {
                 if (!lastClickId.isNullOrEmpty()) {
                     actionHandler.executeAction(lastClickId)
                 }
+
+                // Trigger background cloud sync on tile load
+                RemyCloudSyncService.triggerSync(this@RemyTileService, serviceScope)
 
                 // 2. Fetch fresh active reminders snapshot
                 val activeReminders = reminderDao.getActiveReminders()

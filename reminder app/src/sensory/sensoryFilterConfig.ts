@@ -33,7 +33,15 @@ export const MESSAGING_PACKAGES: string[] = [
   'com.motorola.messaging',
   'com.oneplus.mms',
   'com.sonyericsson.conversations',
+  'com.sonymobile.conversations',
   'com.truecaller',
+  'com.xiaomi.mms',
+  'com.miui.mms',
+  'com.coloros.mms',
+  'com.oppo.mms',
+  'com.vivo.mms',
+  'com.transsion.mms',
+  'com.huawei.message',
 ];
 
 export function isMessagingPackage(pkg?: string): boolean {
@@ -88,7 +96,7 @@ export const RECOMMENDED_WHITELIST_PACKAGES: string[] = [
   'net.one97.paytm',
   'com.google.android.apps.nbu.paisa.user',
   'com.cred.app',
-  // Messaging & SMS (WhatsApp, RCS & SMS)
+  // Messaging & SMS (WhatsApp, RCS & SMS across Android OEMs)
   'com.whatsapp',
   'com.whatsapp.w4b',
   'com.google.android.apps.messaging',
@@ -97,7 +105,15 @@ export const RECOMMENDED_WHITELIST_PACKAGES: string[] = [
   'com.motorola.messaging',
   'com.oneplus.mms',
   'com.sonyericsson.conversations',
+  'com.sonymobile.conversations',
   'com.truecaller',
+  'com.xiaomi.mms',
+  'com.miui.mms',
+  'com.coloros.mms',
+  'com.oppo.mms',
+  'com.vivo.mms',
+  'com.transsion.mms',
+  'com.huawei.message',
 ];
 
 export const DEFAULT_FILTER_CONFIG: SensoryFilterConfig = {
@@ -108,6 +124,7 @@ export const DEFAULT_FILTER_CONFIG: SensoryFilterConfig = {
   enabled: true,
   autoClearPromos: true,
   autoSnoozeNoise: false,
+  autoClearScam: true,
 };
 
 /**
@@ -144,6 +161,7 @@ export function validateFilterConfig(raw: unknown): SensoryFilterConfig {
     enabled: obj.enabled ?? true,
     autoClearPromos: obj.autoClearPromos !== undefined ? Boolean(obj.autoClearPromos) : true,
     autoSnoozeNoise: obj.autoSnoozeNoise !== undefined ? Boolean(obj.autoSnoozeNoise) : false,
+    autoClearScam: obj.autoClearScam !== undefined ? Boolean(obj.autoClearScam) : true,
   };
 }
 

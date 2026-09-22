@@ -25,7 +25,7 @@ export interface RawNotificationPayload {
 // 2. Classification Streams & Enumerations
 // ==========================================
 
-export type NotificationStreamType = 'actionable' | 'deal' | 'noise' | 'quarantined';
+export type NotificationStreamType = 'actionable' | 'deal' | 'noise' | 'quarantined' | 'scam';
 
 export type SensoryCategory = 
   | 'delivery' 
@@ -56,6 +56,16 @@ export type NoiseReason =
   | 'past_receipt' 
   | 'system_status' 
   | 'unactionable';
+
+export type ScamReason =
+  | 'lottery_fraud'
+  | 'fake_kyc_suspension'
+  | 'disconnection_threat'
+  | 'unauthorized_loan_trap'
+  | 'suspicious_apk_or_link'
+  | 'crypto_investment_scheme'
+  | 'gambling_spam'
+  | 'aggressive_telemarketing';
 
 export type FilterMode = 'whitelist' | 'blacklist';
 
@@ -91,11 +101,18 @@ export interface NoiseExtraction {
   reason: NoiseReason;
 }
 
+export interface ScamExtraction {
+  reason: ScamReason;
+  confidence: number;
+  details?: string;
+}
+
 export interface ClassificationResult {
   stream: NotificationStreamType;
   actionable?: ActionableExtraction;
   deal?: DealExtraction;
   noise?: NoiseExtraction;
+  scam?: ScamExtraction;
   quarantineReason?: QuarantineReason;
   confidence: number;
   evaluationTimeMs: number; // Sub-millisecond execution duration
@@ -165,6 +182,7 @@ export interface SensoryFilterConfig {
   enabled?: boolean;
   autoClearPromos?: boolean;
   autoSnoozeNoise?: boolean;
+  autoClearScam?: boolean;
 }
 
 // ==========================================
@@ -225,6 +243,8 @@ export interface ISensoryBridge {
   getAutoClearPromos(): Promise<boolean>;
   setAutoSnoozeNoise(enabled: boolean): Promise<boolean>;
   getAutoSnoozeNoise(): Promise<boolean>;
+  setAutoClearScam(enabled: boolean): Promise<boolean>;
+  getAutoClearScam(): Promise<boolean>;
   getMockDismissedKeys?(): string[];
   getMockSnoozedKeys?(): Array<{ key: string; durationMs: number }>;
   getMockMarkedAsReadKeys?(): string[];

@@ -21,6 +21,7 @@ export class SensoryBridgeService implements ISensoryBridge {
   private mockMarkedAsReadKeys: string[] = [];
   private mockAutoClearPromos: boolean = true;
   private mockAutoSnoozeNoise: boolean = false;
+  private mockAutoClearScam: boolean = true;
   private mockPermissionGranted: boolean = true;
 
   constructor() {
@@ -107,6 +108,7 @@ export class SensoryBridgeService implements ISensoryBridge {
         ...this.mockFilterConfig,
         autoClearPromos: this.mockAutoClearPromos,
         autoSnoozeNoise: this.mockAutoSnoozeNoise,
+        autoClearScam: this.mockAutoClearScam,
       };
     }
     try {
@@ -115,16 +117,19 @@ export class SensoryBridgeService implements ISensoryBridge {
       const validated = validateFilterConfig(parsed);
       const autoClear = await this.getAutoClearPromos();
       const autoSnooze = await this.getAutoSnoozeNoise();
+      const autoScam = await this.getAutoClearScam();
       return {
         ...validated,
         autoClearPromos: autoClear,
         autoSnoozeNoise: autoSnooze,
+        autoClearScam: autoScam,
       };
     } catch {
       return {
         ...DEFAULT_FILTER_CONFIG,
         autoClearPromos: await this.getAutoClearPromos(),
         autoSnoozeNoise: await this.getAutoSnoozeNoise(),
+        autoClearScam: await this.getAutoClearScam(),
       };
     }
   }
@@ -137,6 +142,9 @@ export class SensoryBridgeService implements ISensoryBridge {
     }
     if (validated.autoSnoozeNoise !== undefined) {
       this.mockAutoSnoozeNoise = validated.autoSnoozeNoise;
+    }
+    if (validated.autoClearScam !== undefined) {
+      this.mockAutoClearScam = validated.autoClearScam;
     }
 
     if (Platform.OS !== 'android' || !this.module?.updateFilterConfig) {
@@ -422,6 +430,36 @@ export class SensoryBridgeService implements ISensoryBridge {
       return await this.module.getAutoSnoozeNoise();
     } catch {
       return this.mockAutoSnoozeNoise;
+    }
+  }
+
+  /**
+   * Enables or disables auto-clearing scam and fraudulent SMS notifications.
+   */
+  async setAutoClearScam(enabled: boolean): Promise<boolean> {
+    this.mockAutoClearScam = enabled;
+    this.mockFilterConfig = { ...this.mockFilterConfig, autoClearScam: enabled };
+    if (Platform.OS !== 'android' || !this.module?.setAutoClearScam) {
+      return true;
+    }
+    try {
+      return await this.module.setAutoClearScam(enabled);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Checks whether auto-clearing scam notifications is enabled.
+   */
+  async getAutoClearScam(): Promise<boolean> {
+    if (Platform.OS !== 'android' || !this.module?.getAutoClearScam) {
+      return this.mockAutoClearScam;
+    }
+    try {
+      return await this.module.getAutoClearScam();
+    } catch {
+      return this.mockAutoClearScam;
     }
   }
 

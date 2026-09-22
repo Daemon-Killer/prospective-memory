@@ -212,6 +212,12 @@ class RemySensoryModule(private val reactContext: ReactApplicationContext) :
                     json.optBoolean("autoSnoozeNoise", false)
                 )
             }
+            if (json.has("autoClearScam")) {
+                editor.putBoolean(
+                    RemyNotificationListenerService.PREF_AUTO_CLEAR_SCAM,
+                    json.optBoolean("autoClearScam", true)
+                )
+            }
             editor.apply()
             RemyNotificationListenerService.processActiveNotifications()
             promise.resolve(true)
@@ -437,6 +443,39 @@ class RemySensoryModule(private val reactContext: ReactApplicationContext) :
             promise.resolve(enabled)
         } catch (e: Exception) {
             promise.reject("ERR_GET_AUTO_SNOOZE_NOISE", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun setAutoClearScam(enabled: Boolean, promise: Promise) {
+        try {
+            val prefs = reactContext.getSharedPreferences(
+                RemyNotificationListenerService.PREFS_NAME,
+                Context.MODE_PRIVATE
+            )
+            prefs.edit()
+                .putBoolean(RemyNotificationListenerService.PREF_AUTO_CLEAR_SCAM, enabled)
+                .apply()
+            if (enabled) {
+                RemyNotificationListenerService.processActiveNotifications()
+            }
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("ERR_SET_AUTO_CLEAR_SCAM", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun getAutoClearScam(promise: Promise) {
+        try {
+            val prefs = reactContext.getSharedPreferences(
+                RemyNotificationListenerService.PREFS_NAME,
+                Context.MODE_PRIVATE
+            )
+            val enabled = prefs.getBoolean(RemyNotificationListenerService.PREF_AUTO_CLEAR_SCAM, true)
+            promise.resolve(enabled)
+        } catch (e: Exception) {
+            promise.reject("ERR_GET_AUTO_CLEAR_SCAM", e.message)
         }
     }
 

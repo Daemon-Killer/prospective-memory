@@ -15,6 +15,10 @@
     "typecheck": "tsc --noEmit",
     "build:web": "expo export -p web",
     "build:android": "cd android && gradlew assembleRelease",
+    "build:wear": "cd wear && gradlew.bat assembleDebug",
+    "upload:drive": "..\\.venv\\Scripts\\python.exe ..\\scripts\\upload_to_drive.py",
+    "ship:drive": "powershell -ExecutionPolicy Bypass -File ..\\scripts\\ship.ps1",
+    "ship:wear": "cd wear && gradlew.bat assembleDebug && cd .. && ..\\.venv\\Scripts\\python.exe ..\\scripts\\upload_to_drive.py",
     "deploy": "gh-pages -d dist --dotfiles --nojekyll"
   },
   "dependencies": {

@@ -59,6 +59,8 @@ export interface HomeScreenProps {
   onToggleAutoClearPromos?: (enabled: boolean) => void;
   autoSnoozeNoise?: boolean;
   onToggleAutoSnoozeNoise?: (enabled: boolean) => void;
+  autoClearScam?: boolean;
+  onToggleAutoClearScam?: (enabled: boolean) => void;
   currentTime?: Date;
   testID?: string;
 }
@@ -83,6 +85,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onToggleAutoClearPromos: propOnToggleAutoClearPromos,
   autoSnoozeNoise: propAutoSnoozeNoise,
   onToggleAutoSnoozeNoise: propOnToggleAutoSnoozeNoise,
+  autoClearScam: propAutoClearScam,
+  onToggleAutoClearScam: propOnToggleAutoClearScam,
   currentTime = new Date(),
   testID = 'home-screen',
 }) => {
@@ -98,10 +102,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const [internalAutoClearPromos, setInternalAutoClearPromos] = useState<boolean>(true);
   const [internalAutoSnoozeNoise, setInternalAutoSnoozeNoise] = useState<boolean>(false);
+  const [internalAutoClearScam, setInternalAutoClearScam] = useState<boolean>(true);
   const [hasNotificationAccess, setHasNotificationAccess] = useState<boolean>(true);
 
   const autoClearPromos = propAutoClearPromos ?? internalAutoClearPromos;
   const autoSnoozeNoise = propAutoSnoozeNoise ?? internalAutoSnoozeNoise;
+  const autoClearScam = propAutoClearScam ?? internalAutoClearScam;
 
   const [internalSuggestions, setInternalSuggestions] = useState<SensorySuggestion[]>(() =>
     sensoryStorageService.getPendingSuggestions()
@@ -159,6 +165,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         if (cfg.autoSnoozeNoise !== undefined) {
           setInternalAutoSnoozeNoise(cfg.autoSnoozeNoise);
         }
+        if (cfg.autoClearScam !== undefined) {
+          setInternalAutoClearScam(cfg.autoClearScam);
+        }
       }
     }).catch(() => {});
 
@@ -207,7 +216,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     const routeNotification = async (payload: any) => {
       try {
         const result = intentClassifier.classify(payload);
-        if (result.stream === 'actionable' && result.actionable) {
+        if (result.stream === 'scam') {
+          if (payload.key && autoClearScam) {
+            if (isMessagingPackage(payload.packageName)) {
+              await sensoryBridge.markAsRead(payload.key);
+            } else {
+              await sensoryBridge.dismissNotification(payload.key);
+            }
+          }
+        } else if (result.stream === 'actionable' && result.actionable) {
           if (result.actionable.tags?.includes('call')) {
             // Auto-create reminder for missed call
             await remindersHook.createReminder({

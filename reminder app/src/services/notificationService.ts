@@ -243,10 +243,11 @@ export class NotificationService implements INotificationService {
           sound: 'default',
           priority: Notifications.AndroidNotificationPriority?.MAX,
           channelId: REMINDER_CHANNEL_ID,
-        },
+        } as any,
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes?.DATE ?? 'date',
           date: targetDate,
+          channelId: REMINDER_CHANNEL_ID,
         } as any,
       });
 
@@ -496,10 +497,11 @@ export class NotificationService implements INotificationService {
           sound: 'default',
           priority: Notifications.AndroidNotificationPriority?.MAX,
           channelId: REMINDER_CHANNEL_ID,
-        },
+        } as any,
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes?.DATE ?? 'date',
           date: targetDate,
+          channelId: REMINDER_CHANNEL_ID,
         } as any,
       });
 

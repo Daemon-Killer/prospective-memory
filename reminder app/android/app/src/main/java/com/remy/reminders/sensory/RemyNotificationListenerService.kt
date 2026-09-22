@@ -139,12 +139,28 @@ class RemyNotificationListenerService : NotificationListenerService() {
         // 9. Active Notification Tray Management & Promotional Clearing
         val autoClearPromos = prefs.getBoolean(PREF_AUTO_CLEAR_PROMOS, true)
         val autoSnoozeNoise = prefs.getBoolean(PREF_AUTO_SNOOZE_NOISE, false)
+        val autoClearScam = prefs.getBoolean(PREF_AUTO_CLEAR_SCAM, true)
 
         val isWhatsapp = WHATSAPP_PACKAGES.contains(packageName) || packageName.startsWith("com.whatsapp")
         val isSms = isSmsPackage(packageName, applicationContext)
+        val isScam = isScamNotification(packageName, title, text, applicationContext)
         val isPromo = isPromotionalNotification(packageName, title, text, applicationContext)
 
-        if (isPromo) {
+        if (isScam) {
+            // Automatically trigger mark-as-read and dismiss scam SMS / fraudulent alerts
+            if (isWhatsapp || isSms) {
+                tryMarkAsRead(notification, applicationContext)
+            }
+            if (autoClearScam) {
+                if (sbn.key != null) {
+                    cancelNotification(sbn.key)
+                } else {
+                    @Suppress("DEPRECATION")
+                    cancelNotification(packageName, sbn.tag, sbn.id)
+                }
+                Log.i(TAG, "Marked as read & dismissed scam notification: $packageName (${sbn.key})")
+            }
+        } else if (isPromo) {
             if (isWhatsapp || isSms) {
                 // Mark conversation as read in WhatsApp / SMS inbox and clear shade
                 tryMarkAsRead(notification, applicationContext)
@@ -188,14 +204,13 @@ class RemyNotificationListenerService : NotificationListenerService() {
     private fun isPackagePermitted(pkg: String, prefs: SharedPreferences): Boolean {
         val normalizedPkg = pkg.trim().lowercase()
         val autoClearPromos = prefs.getBoolean(PREF_AUTO_CLEAR_PROMOS, true)
+        val autoClearScam = prefs.getBoolean(PREF_AUTO_CLEAR_SCAM, true)
 
-        // Always permit WhatsApp, SMS, and known shopping/food apps if autoClearPromos is active,
-        // ensuring promotional clutter from messaging and commerce apps is actively caught and cleared!
-        if (autoClearPromos && (WHATSAPP_PACKAGES.contains(normalizedPkg) ||
+        // Always permit WhatsApp, SMS, and known shopping/food apps if autoClearPromos or autoClearScam is active,
+        // ensuring promotional and scam clutter from messaging and commerce apps is actively caught and cleared!
+        if ((autoClearPromos || autoClearScam) && (WHATSAPP_PACKAGES.contains(normalizedPkg) ||
                     normalizedPkg.startsWith("com.whatsapp") ||
-                    SMS_PACKAGES.contains(normalizedPkg) ||
-                    normalizedPkg.contains("messaging") ||
-                    normalizedPkg.contains(".mms") ||
+                    isSmsPackage(normalizedPkg, applicationContext) ||
                     ECOMMERCE_AND_FOOD_PACKAGES.contains(normalizedPkg))) {
             return true
         }
@@ -279,6 +294,7 @@ class RemyNotificationListenerService : NotificationListenerService() {
         const val PREF_LAST_QUARANTINED_AT = "remy_last_quarantined_at"
         const val PREF_AUTO_CLEAR_PROMOS = "remy_auto_clear_promos"
         const val PREF_AUTO_SNOOZE_NOISE = "remy_auto_snooze_noise"
+        const val PREF_AUTO_CLEAR_SCAM = "remy_auto_clear_scam"
         const val MAX_QUEUE_SIZE = 100
 
         @Volatile
@@ -316,7 +332,15 @@ class RemyNotificationListenerService : NotificationListenerService() {
             "com.motorola.messaging",
             "com.oneplus.mms",
             "com.sonyericsson.conversations",
-            "com.truecaller"
+            "com.sonymobile.conversations",
+            "com.truecaller",
+            "com.xiaomi.mms",
+            "com.miui.mms",
+            "com.coloros.mms",
+            "com.oppo.mms",
+            "com.vivo.mms",
+            "com.transsion.mms",
+            "com.huawei.message"
         )
 
         val ECOMMERCE_AND_FOOD_PACKAGES = setOf(
@@ -346,6 +370,51 @@ class RemyNotificationListenerService : NotificationListenerService() {
             RegexOption.IGNORE_CASE
         )
 
+        private val BANK_TRANSACTION_REGEX = Regex(
+            """\b(?:debited (?:for|by|from|with)|credited (?:to|with)|a/c\s*(?:no\.?)?\s*[\w*xX]+\s*(?:is\s*)?(?:debited|credited)|acct\s*(?:is\s*)?(?:debited|credited)|(?:inr|rs\.?|₹|\$)\s*[\d,]+(?:\.\d{2})?\s*(?:debited|credited)|avail(?:able)?\s*bal(?:ance)?|closing\s*bal(?:ance)?|clear\s*bal(?:ance)?|upi\s*(?:ref|txn|transaction)|spent\s*on\s*(?:credit|debit)?\s*card|atm\s*withdrawn?|pos\s*txn|card\s*ending\s*(?:in\s*)?[\d*xX]{4})\b""",
+            RegexOption.IGNORE_CASE
+        )
+
+        private val LOTTERY_SCAM_REGEX = Regex(
+            """\b(?:congratulations|congrats|hurry|lucky winner|dear winner|selected)\b.*(?:won|winner|winning|selected for|claim your)\b.*(?:lottery|jackpot|lucky draw|bumper prize|cash prize|reward prize|kbc|car prize|crore|lakhs?|fortune|award)|\b(?:won|winner of|claim)\s+(?:a\s+)?(?:lottery|jackpot|bumper prize|lucky draw|kbc prize|cash reward|free gift)\b|\b(?:you have won|you won)\s+(?:a\s+)?(?:lottery|jackpot|lucky draw|bumper prize|cash prize|cash reward|reward|prize money|fortune|crore|lakhs?|free\s+(?:iphone|car|bike|cash))\b|\bwon a lucky draw\b|\b(?:kbc|kaun banega crorepati)\b.*(?:lottery|prize|winner|number|head office)|\bclaim your (?:lottery|jackpot|prize money|winnings|free car)\b|\b(?:selected\s+for|win\s+a)\s+(?:free\s+)?(?:iphone|car|bike|tata safari|cash)\b.*(?:click|call|claim)""",
+            RegexOption.IGNORE_CASE
+        )
+
+        private val FAKE_KYC_SUSPENSION_REGEX = Regex(
+            """\b(?:pan(?: card)?|aadhaar(?: card)?|kyc|(?:bank\s+)?(?:account|a/c|acct)|sim(?: card)?|netbanking|yono|debit card|credit card)\b.*(?:suspended|blocked|deactivated|expired|restricted|freeze|inactive|terminated)\b.*(?:click|visit|update|verify|call|link|apk|contact)|\b(?:dear (?:customer|user)|urgent:?|notice:?)\b.*(?:pan card|kyc|aadhaar)\b.*(?:suspended|blocked|deactivated|expire|invalid|terminated)|\b(?:update|complete|verify)\s+(?:your\s+)?(?:kyc|pan card|aadhaar)\s+(?:immediately|urgently|today|within \d+ hours?)\s+(?:or|otherwise)\s+(?:your\s+)?(?:account|a/c|acct|sim|card|services?)\s+(?:will be|is)\s+(?:blocked|suspended|deactivated|closed)|\be[- ]?kyc\s+(?:pending|expired|verification required|suspended)\b|\b(?:yono|sbi|hdfc|icici|axis|pnb|paytm|airtel)\s+(?:account|a/c|acct|rewards?)\b.*(?:blocked|suspended|update kyc|redeem points.*(?:link|http|bit\.ly))|\byour\s+(?:sbi|hdfc|icici|axis|bank)\s+(?:account|a/c|acct)\s+(?:has been|is)\s+(?:suspended|blocked)\b""",
+            RegexOption.IGNORE_CASE
+        )
+
+        private val DISCONNECTION_THREAT_REGEX = Regex(
+            """\b(?:electricity|power|light)\s+(?:power\s+)?(?:will be|to be)\s+(?:disconnect(?:ed)?|cut(?: off)?)\s+(?:tonight|today|by \d+[:.]\d+|\d+\s*(?:pm|am))\b|\b(?:previous|last)\s+month\s+bill\s+not\s+updated.*(?:disconnect|officer|call)|\belectricity (?:officer|helpline|department)\b.*(?:\d{10}|\+91\d{10})|\bpower (?:supply )?(?:will be )?disconnected\b|\belectricity bill\b.*(?:disconnected tonight|contact power officer|call electricity officer)""",
+            RegexOption.IGNORE_CASE
+        )
+
+        private val LOAN_TRAP_REGEX = Regex(
+            """\b(?:pre[- ]approved|instant)\s+(?:personal\s+)?loan\s+of\s+(?:₹|rs\.?|inr)?\s*[\d,]+\s*(?:approved|disbursed|credited|waiting|ready)\b.*(?:no\s+(?:cibil|documents?|doc|verification|income proof)|without documents?|apply now|click|link)|\b(?:approved\s+loan|claim\s+your\s+loan|get\s+instant\s+cash\s+loan)\b.*(?:no cibil|0% interest|no income proof|click|bit\.ly)|\bcredit card\b.*(?:limit of\s+(?:₹|rs\.?|inr)?\s*[\d,]+).*(?:pre[- ]approved|free|without (?:income proof|documents?)|no annual fee|apply now.*(?:bit\.ly|link|click))|\b(?:instant\s+loan\s+in\s+\d+\s+(?:mins?|minutes?)|paperless\s+loan|loan\s+disbursal\s+pending)\b.*(?:click|apply|link)|\b(?:bad cibil|low cibil)\s+loan\s+approved\b""",
+            RegexOption.IGNORE_CASE
+        )
+
+        private val SUSPICIOUS_APK_LINK_REGEX = Regex(
+            """\b(?:download|install|update)\b.*\.apk\b|\b(?:whatsapp\s+pink|payment\s+app\s+update|kyc\s+app)\b.*\.apk|\b(?:bit\.ly|tinyurl\.com|is\.gd|cutt\.ly|t\.co|rb\.gy|shorturl\.at|tiny\.cc|cutt\.us|surl\.li)\b.*(?:apk|kyc|pan|winner|loan|claim|bonus|suspend|reward|gift|free|earn|job)|\b(?:apk download|install apk)\b""",
+            RegexOption.IGNORE_CASE
+        )
+
+        private val CRYPTO_JOB_SCAM_REGEX = Regex(
+            """\b(?:earn|make)\s+(?:₹|rs\.?|inr|\$)?\s*[\d,]+(?:\s*-\s*(?:₹|rs\.?|inr|\$)?\s*[\d,]+)?\s*(?:daily|per day|every day)\s*(?:working from home|work from home|from home|online|part[- ]time)\b|\b(?:part[- ]time\s+job|work(?:ing)?\s+from\s+home)\b.*(?:liking\s+(?:youtube|videos?)|rating\s+(?:hotels?|apps?)|google\s+maps|reviews?).*(?:telegram|whatsapp|\+91|\d{10})|\b(?:guaranteed|assured)\s+(?:returns?|profit)\s+of\s+\d+%\b|\b(?:double\s+your\s+money|multiply\s+investment)\s+in\s+\d+\s+(?:days?|hours?|weeks?)\b|\b(?:crypto\s+mining|bitcoin\s+investment|forex\s+trading\s+signals?)\b.*(?:guaranteed|daily profit|join telegram|telegram channel)|\b(?:work(?:ing)?\s+from\s+home|part[- ]time\s+job)\s+offer.*(?:daily payout|earn up to \d+)""",
+            RegexOption.IGNORE_CASE
+        )
+
+        private val GAMBLING_SPAM_REGEX = Regex(
+            """\b(?:play\s+online\s+(?:rummy|casino|teen patti|poker)|bet\s+on\s+(?:ipl|cricket|casino))\b.*(?:deposit\s+(?:₹|rs\.?|inr)?\s*\d+|get\s+(?:₹|rs\.?|inr)?\s*\d+\s+free|bonus|bonus\s+code)|\b(?:claim\s+100%\s+deposit\s+bonus|register\s+and\s+get\s+(?:₹|rs\.?|inr)?\s*\d+\s+cash)\b""",
+            RegexOption.IGNORE_CASE
+        )
+
+        private val TELEMARKETING_SPAM_REGEX = Regex(
+            """\b(?:exclusive\s+plots?|villa\s+plots?|luxury\s+villas?|open\s+plots?)\s+(?:near|at|in)\b.*(?:starting\s+(?:at\s+)?(?:₹|rs\.?|inr)?\s*[\d.]+\s*(?:lakhs?|cr)|call\s+now|book\s+site\s+visit)|\b(?:escorts?|call\s+girls?|massage\s+service)\b.*(?:\d{10}|\+91)|\b(?:free\s+stock\s+tips?|sure\s+shot\s+calls?|jackpot\s+calls?|nifty\s+calls?|banknifty\s+calls?|multibagger\s+stocks?)\b.*(?:join\s+telegram|call\s+now|whatsapp)""",
+            RegexOption.IGNORE_CASE
+        )
+
         private val PROMOTIONAL_OFFER_REGEX = Regex(
             """\b(\d{1,3}%\s*(?:off|discount|cashback)|flat\s*(?:₹|rs\.?|inr|\$)?\s*\d+\s*(?:off|discount|cashback)?|save\s*(?:₹|rs\.?|inr|\$)?\s*\d+|(?:₹|rs\.?|inr|\$)\s*\d+\s*(?:off|discount|cashback)|use\s+code\b|coupons?\b|promo\s+codes?|vouchers?\b|discounts?\b|special\s+offers?|exclusive\s+offers?|limited\s+period\s+offers?|flash\s+sales?|mega\s+sales?|sales?\s+is\s+live|free\s+delivery|free\s+shipping|bogo\b|buy\s+1\s+get\s+1|cashbacks?\b|hurry\b.*(?:offers?|deals?|discounts?|sales?)|deals?\s+of\s+the\s+day|flat\s+discounts?|festive\s+offers?|extra\s+\d+%\s*off|claim\s+(?:your\s+)?offers?|claim\s+(?:your\s+)?rewards?|avail\s+(?:this\s+)?offers?|shop\s+now|order\s+now|explore\s+deals?|rewards?\b|win\s+(?:₹|rs\.?|inr|\$)?\s*\d+)\b""",
             RegexOption.IGNORE_CASE
@@ -362,12 +431,20 @@ class RemyNotificationListenerService : NotificationListenerService() {
         )
 
         fun isSmsPackage(pkg: String, context: Context): Boolean {
-            if (SMS_PACKAGES.contains(pkg)) return true
-            if (pkg.contains("messaging") || pkg.contains(".mms")) return true
+            val normalized = pkg.trim().lowercase()
+            if (SMS_PACKAGES.contains(normalized)) return true
+            if (normalized.contains("messaging") ||
+                normalized.contains(".mms") ||
+                normalized.contains("telephony") ||
+                normalized.contains("truecaller") ||
+                normalized.contains("conversations") ||
+                normalized.contains("message") ||
+                normalized.contains("sms")
+            ) return true
             return try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                     val defaultSms = Telephony.Sms.getDefaultSmsPackage(context)
-                    defaultSms != null && defaultSms == pkg
+                    defaultSms != null && defaultSms.equals(pkg, ignoreCase = true)
                 } else {
                     false
                 }
@@ -376,9 +453,53 @@ class RemyNotificationListenerService : NotificationListenerService() {
             }
         }
 
+        fun isBankTransaction(title: String, text: String): Boolean {
+            val combined = "$title $text"
+            return BANK_TRANSACTION_REGEX.containsMatchIn(combined)
+        }
+
         fun isActionableOrTransactional(title: String, text: String): Boolean {
             val combined = "$title $text"
-            return TRANSACTIONAL_OR_ACTIONABLE_REGEX.containsMatchIn(combined)
+            return TRANSACTIONAL_OR_ACTIONABLE_REGEX.containsMatchIn(combined) || isBankTransaction(title, text)
+        }
+
+        fun isScamNotification(pkg: String, title: String, text: String, context: Context): Boolean {
+            val combined = "$title $text"
+            if (combined.isBlank()) return false
+            if (SensorySecurityFilter.isSensitiveAuth(title, text)) return false
+
+            // Genuine bank transaction receipts are safe UNLESS they contain account suspension / APK phishing threats
+            if (isBankTransaction(title, text)) {
+                val hasKycThreat = FAKE_KYC_SUSPENSION_REGEX.containsMatchIn(combined)
+                val hasApkThreat = SUSPICIOUS_APK_LINK_REGEX.containsMatchIn(combined)
+                if (!hasKycThreat && !hasApkThreat) {
+                    return false
+                }
+            }
+
+            // Genuine deliveries or utility bills are safe UNLESS they contain scam threats (phishing APK, lottery, loan trap, fake KYC)
+            if (TRANSACTIONAL_OR_ACTIONABLE_REGEX.containsMatchIn(combined)) {
+                val isDisconnectionScam = DISCONNECTION_THREAT_REGEX.containsMatchIn(combined)
+                val isFakeKyc = FAKE_KYC_SUSPENSION_REGEX.containsMatchIn(combined)
+                val isLottery = LOTTERY_SCAM_REGEX.containsMatchIn(combined)
+                val isLoanTrap = LOAN_TRAP_REGEX.containsMatchIn(combined)
+                val isApkOrLink = SUSPICIOUS_APK_LINK_REGEX.containsMatchIn(combined)
+                val isCryptoJob = CRYPTO_JOB_SCAM_REGEX.containsMatchIn(combined)
+                val isGambling = GAMBLING_SPAM_REGEX.containsMatchIn(combined)
+                val isTelemarketing = TELEMARKETING_SPAM_REGEX.containsMatchIn(combined)
+
+                return isDisconnectionScam || isFakeKyc || isLottery || isLoanTrap ||
+                        isApkOrLink || isCryptoJob || isGambling || isTelemarketing
+            }
+
+            return LOTTERY_SCAM_REGEX.containsMatchIn(combined) ||
+                    FAKE_KYC_SUSPENSION_REGEX.containsMatchIn(combined) ||
+                    DISCONNECTION_THREAT_REGEX.containsMatchIn(combined) ||
+                    LOAN_TRAP_REGEX.containsMatchIn(combined) ||
+                    SUSPICIOUS_APK_LINK_REGEX.containsMatchIn(combined) ||
+                    CRYPTO_JOB_SCAM_REGEX.containsMatchIn(combined) ||
+                    GAMBLING_SPAM_REGEX.containsMatchIn(combined) ||
+                    TELEMARKETING_SPAM_REGEX.containsMatchIn(combined)
         }
 
         fun isPromotionalNotification(pkg: String, title: String, text: String, context: Context): Boolean {
@@ -426,12 +547,14 @@ class RemyNotificationListenerService : NotificationListenerService() {
                 } else false
 
                 val titleStr = action.title?.toString()?.trim() ?: ""
+                if (titleStr.contains("unread", ignoreCase = true)) continue
+
                 val isTitleMarkRead = titleStr.equals("read", ignoreCase = true) ||
                         titleStr.equals("mark as read", ignoreCase = true) ||
                         titleStr.equals("mark read", ignoreCase = true) ||
                         titleStr.equals("mark as seen", ignoreCase = true) ||
                         titleStr.equals("seen", ignoreCase = true) ||
-                        Regex("""\b(?:mark\s+(?:as\s+)?(?:read|seen)|read|seen)\b""", RegexOption.IGNORE_CASE).containsMatchIn(titleStr) ||
+                        Regex("""\b(?:mark\s+(?:all\s+)?(?:as\s+)?(?:read|seen)|read|seen)\b""", RegexOption.IGNORE_CASE).containsMatchIn(titleStr) ||
                         Regex("""\b(?:leído|marcar\s+como\s+leído|lu|marquer\s+comme\s+lu|gelesen|als\s+gelesen\s+markieren|letto|lido|marcar\s+como\s+lida)\b""", RegexOption.IGNORE_CASE).containsMatchIn(titleStr)
 
                 if (isSemanticMarkRead || isTitleMarkRead) {
@@ -510,6 +633,7 @@ class RemyNotificationListenerService : NotificationListenerService() {
                 val prefs = service.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 val autoClearPromos = prefs.getBoolean(PREF_AUTO_CLEAR_PROMOS, true)
                 val autoSnoozeNoise = prefs.getBoolean(PREF_AUTO_SNOOZE_NOISE, false)
+                val autoClearScam = prefs.getBoolean(PREF_AUTO_CLEAR_SCAM, true)
 
                 for (sbn in activeSbns) {
                     val pkg = sbn.packageName ?: continue
@@ -543,9 +667,23 @@ class RemyNotificationListenerService : NotificationListenerService() {
 
                     val isWhatsapp = WHATSAPP_PACKAGES.contains(pkg) || pkg.startsWith("com.whatsapp")
                     val isSms = isSmsPackage(pkg, service.applicationContext)
+                    val isScam = isScamNotification(pkg, title, text, service.applicationContext)
                     val isPromo = isPromotionalNotification(pkg, title, text, service.applicationContext)
 
-                    if (isPromo) {
+                    if (isScam) {
+                        if (isWhatsapp || isSms) {
+                            tryMarkAsRead(notification, service.applicationContext)
+                        }
+                        if (autoClearScam) {
+                            if (sbn.key != null) {
+                                service.cancelNotification(sbn.key)
+                            } else {
+                                @Suppress("DEPRECATION")
+                                service.cancelNotification(pkg, sbn.tag, sbn.id)
+                            }
+                            Log.i(TAG, "processActive: Marked read & dismissed scam notification: $pkg (${sbn.key})")
+                        }
+                    } else if (isPromo) {
                         if (isWhatsapp || isSms) {
                             tryMarkAsRead(notification, service.applicationContext)
                             if (autoClearPromos) {

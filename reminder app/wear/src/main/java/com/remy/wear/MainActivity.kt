@@ -25,10 +25,12 @@ import com.remy.wear.domain.SnoozeEngine
 import com.remy.wear.surfaces.complication.RemyComplicationUpdater
 import com.remy.wear.surfaces.tile.RemyTileService
 import com.remy.wear.surfaces.tile.TileLayoutBuilder
+import com.remy.wear.sync.RemyCloudSyncService
 import com.remy.wear.sync.RemySyncManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.util.Calendar
 import java.util.UUID
 
@@ -124,10 +126,27 @@ class MainActivity : ComponentActivity() {
         bindViews()
         observeReminders()
 
+        // Trigger direct cloud sync on app launch
+        RemyCloudSyncService.triggerSync(this)
+
         if (intent?.getBooleanExtra(EXTRA_START_VOICE_CAPTURE, false) == true ||
             intent?.action == ACTION_VOICE_CAPTURE) {
             startVoiceCapture()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Trigger cloud sync and begin periodic polling while in foreground
+        RemyCloudSyncService.triggerSync(this)
+        if (testDaoOverride == null) {
+            RemyCloudSyncService.getInstance(this).startPeriodicSync(lifecycleScope)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        RemyCloudSyncService.getInstance(this).stopPeriodicSync()
     }
 
     private fun bindViews() {
@@ -328,13 +347,25 @@ class MainActivity : ComponentActivity() {
             updatedAt = now,
             syncStatus = ReminderEntity.SYNC_STATUS_PENDING_UPLOAD
         )
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                reminderDao.upsert(reminder)
-                notifySurfaces()
-                RemySyncManager.triggerSync(this@MainActivity)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to persist voice capture", e)
+        if (testDaoOverride != null) {
+            runBlocking {
+                try {
+                    reminderDao.upsert(reminder)
+                    notifySurfaces()
+                    RemySyncManager.triggerSync(this@MainActivity)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to persist voice capture", e)
+                }
+            }
+        } else {
+            lifecycleScope.launch {
+                try {
+                    reminderDao.upsert(reminder)
+                    notifySurfaces()
+                    RemySyncManager.triggerSync(this@MainActivity)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to persist voice capture", e)
+                }
             }
         }
         return reminder

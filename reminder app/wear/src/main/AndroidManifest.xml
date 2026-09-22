@@ -5,6 +5,9 @@
     <uses-feature android:name="android.hardware.type.watch" />
 
     <!-- Core Wear OS Permissions -->
+    <!-- Direct cloud database / backend API synchronization -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Somatosensory anti-habituation haptic feedback -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Background alarm & reminder alert execution -->

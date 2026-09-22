@@ -40,6 +40,14 @@ sealed class SyncResult {
 }
 
 /**
+ * Result of a dual synchronization cycle coordinating cloud and Bluetooth P2P channels.
+ */
+data class DualSyncResult(
+    val cloudResult: CloudSyncResult,
+    val bluetoothResult: SyncResult
+)
+
+/**
  * Node metadata for Bluetooth and cloud connected companions.
  */
 data class NodeInfo(
@@ -128,7 +136,8 @@ class RemySyncManager @VisibleForTesting constructor(
     private val complicationUpdater: (Context) -> Unit = { RemyComplicationUpdater.requestUpdate(it) },
     private val tileUpdater: (Context) -> Unit = { TileService.getUpdater(it).requestUpdate(RemyTileService::class.java) },
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val requireConnectedNodes: Boolean = true
+    private val requireConnectedNodes: Boolean = true,
+    private val cloudSyncService: RemyCloudSyncService? = null
 ) {
 
     /**
@@ -214,6 +223,31 @@ class RemySyncManager @VisibleForTesting constructor(
         }
     }
 
+    /**
+     * Executes a direct cloud sync using RemyCloudSyncService.
+     */
+    suspend fun syncCloud(forceFull: Boolean = false): CloudSyncResult {
+        val service = cloudSyncService ?: RemyCloudSyncService.getInstance(context)
+        return service.syncNow(forceFull)
+    }
+
+    /**
+     * Dual-Sync: Coordinates direct cloud synchronization and Bluetooth P2P broadcast.
+     */
+    suspend fun syncDual(forceFull: Boolean = false): DualSyncResult {
+        val cloudRes = try {
+            syncCloud(forceFull)
+        } catch (e: Exception) {
+            CloudSyncResult.Failure(e)
+        }
+        val btRes = try {
+            syncPending()
+        } catch (e: Exception) {
+            SyncResult.Failure(e)
+        }
+        return DualSyncResult(cloudRes, btRes)
+    }
+
     private fun notifySurfaces() {
         try {
             complicationUpdater(context)
@@ -254,6 +288,7 @@ class RemySyncManager @VisibleForTesting constructor(
 
         /**
          * Static helper so callers can easily trigger background dispatch.
+         * In production, coordinates direct cloud synchronization with Bluetooth P2P sync.
          */
         fun triggerSync(
             context: Context,
@@ -264,8 +299,31 @@ class RemySyncManager @VisibleForTesting constructor(
             return scope.launch {
                 try {
                     val manager = create(appContext)
-                    val result = manager.syncPending()
-                    syncCompletionListener?.invoke(result)
+                    if (syncManagerProvider != null) {
+                        // Testing isolation: Bluetooth P2P manager under explicit test
+                        val result = manager.syncPending()
+                        syncCompletionListener?.invoke(result)
+                    } else {
+                        // Production Dual-Sync: Cloud HTTP sync + Bluetooth P2P fallback
+                        val skipCloudInTest = MainActivity.testDaoOverride != null &&
+                            RemyCloudSyncService.testTransportOverride == null &&
+                            RemyCloudSyncService.testServiceOverride == null
+
+                        if (!skipCloudInTest) {
+                            try {
+                                RemyCloudSyncService.getInstance(appContext).syncNow()
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Direct cloud sync failed during triggerSync", e)
+                            }
+                        }
+                        val btResult = try {
+                            manager.syncPending()
+                        } catch (e: Exception) {
+                            Log.d(TAG, "Bluetooth P2P sync skipped during triggerSync: ${e.message}")
+                            SyncResult.Failure(e)
+                        }
+                        syncCompletionListener?.invoke(btResult)
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
