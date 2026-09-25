@@ -273,6 +273,7 @@ export class SensoryStorageService implements ISensoryStorageService {
       inferredDueDate: extraction.inferredDueDate,
       armed: extraction.armed,
       sourcePackage: raw.packageName,
+      sourceAppName: extraction.sourceAppName,
       category: extraction.category,
       confidence: extraction.confidence,
       tags: extraction.tags,

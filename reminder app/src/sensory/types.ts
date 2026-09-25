@@ -83,6 +83,7 @@ export interface ActionableExtraction {
   tags: string[];          // Semantic tags (e.g. ["delivery", "amazon"], ["bill", "finance"])
   confidence: number;      // Heuristic score (0.0 to 1.0)
   notes?: string | null;   // Supplementary context for Reminder.notes
+  sourceAppName?: string;  // e.g. "Mummy · WhatsApp"
 }
 
 export interface DealExtraction {

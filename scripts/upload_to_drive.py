@@ -17,6 +17,9 @@ DEST_MOBILE_APK = REPO_ROOT / "Remy-Reminders.apk"
 BUILT_WEAR_APK = REPO_ROOT / "reminder app" / "wear" / "build" / "outputs" / "apk" / "debug" / "remy-wear-debug.apk"
 DEST_WEAR_APK = REPO_ROOT / "Remy-Wear-debug.apk"
 
+BUILT_ECHORECALL_APK = Path(r"C:\Users\bda99\Desktop\echorecall\android\app\build\outputs\apk\release\app-release.apk")
+DEST_ECHORECALL_APK = REPO_ROOT / "EchoRecall.apk"
+
 FOLDER_ID = "17X8zFV2b7eZiQ3xbbAGY36Nc06e1st0A"
 MOBILE_FILE_ID = "17XvYljBwXW31q7T_c2T0Jmr7zrNs4YTt"
 WEAR_FILE_ID = "1YqxWeHzxaFa2lkDR8Fgz2isPqD_lj4vv"
@@ -47,7 +50,7 @@ def get_drive_service():
 
     return build("drive", "v3", credentials=creds)
 
-def upload_apk(service, file_path: Path, file_name: str, file_id: str):
+def upload_apk(service, file_path: Path, file_name: str, file_id: str = None):
     if not file_path.exists():
         raise FileNotFoundError(f"APK file does not exist: {file_path}")
 
@@ -61,11 +64,26 @@ def upload_apk(service, file_path: Path, file_name: str, file_id: str):
         resumable=True
     )
 
-    request = service.files().update(
-        fileId=file_id,
-        media_body=media,
-        fields="id, name, webViewLink, size"
-    )
+    # Resolve fileId if not provided or verify exists
+    if not file_id:
+        query = f"'{FOLDER_ID}' in parents and name = '{file_name}' and trashed = false"
+        results = service.files().list(q=query, fields="files(id, name, webViewLink)").execute()
+        files = results.get("files", [])
+        if files:
+            file_id = files[0]["id"]
+
+    if file_id:
+        request = service.files().update(
+            fileId=file_id,
+            media_body=media,
+            fields="id, name, webViewLink, size"
+        )
+    else:
+        request = service.files().create(
+            body={"name": file_name, "parents": [FOLDER_ID]},
+            media_body=media,
+            fields="id, name, webViewLink, size"
+        )
 
     response = None
     retries = 0
@@ -103,6 +121,14 @@ def upload_apk(service, file_path: Path, file_name: str, file_id: str):
 
 def main():
     service = get_drive_service()
+
+    # Upload EchoRecall APK if built
+    if BUILT_ECHORECALL_APK.exists():
+        print(f"[Pipeline] Copying built EchoRecall APK: {DEST_ECHORECALL_APK.name}...", flush=True)
+        shutil.copy2(BUILT_ECHORECALL_APK, DEST_ECHORECALL_APK)
+        upload_apk(service, DEST_ECHORECALL_APK, "EchoRecall.apk")
+    else:
+        print(f"[Pipeline] EchoRecall APK not found at {BUILT_ECHORECALL_APK}.", flush=True)
 
     # Upload Mobile APK if built
     if BUILT_MOBILE_APK.exists():

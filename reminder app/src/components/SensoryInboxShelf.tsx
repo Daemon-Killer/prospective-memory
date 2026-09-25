@@ -39,7 +39,21 @@ export interface SensoryInboxShelfProps {
  */
 export function cleanPackageBadge(sourcePackage: string, sourceAppName?: string): string {
   if (sourceAppName && sourceAppName.trim().length > 0) {
-    return sourceAppName.toUpperCase();
+    const trimmed = sourceAppName.trim();
+    const pkgLower = (sourcePackage || '').toLowerCase();
+    if (
+      (pkgLower.includes('whatsapp') || pkgLower === 'com.whatsapp' || pkgLower === 'com.whatsapp.w4b') &&
+      !trimmed.toLowerCase().includes('whatsapp')
+    ) {
+      return `${trimmed.toUpperCase()} · WHATSAPP`;
+    }
+    if (
+      (pkgLower.includes('telegram') || pkgLower === 'org.telegram.messenger') &&
+      !trimmed.toLowerCase().includes('telegram')
+    ) {
+      return `${trimmed.toUpperCase()} · TELEGRAM`;
+    }
+    return trimmed.toUpperCase();
   }
   const clean = (sourcePackage || '').toLowerCase();
   if (clean.includes('swiggy')) return 'SWIGGY';
@@ -287,6 +301,16 @@ export const SensoryInboxShelf: React.FC<SensoryInboxShelfProps> = ({
                     {suggestion.title}
                   </Text>
 
+                  {suggestion.notes ? (
+                    <Text
+                      testID={`suggestion-note-${suggestion.id}`}
+                      style={[styles.noteText, { color: colors.textSecondary }]}
+                      numberOfLines={2}
+                    >
+                      {suggestion.notes}
+                    </Text>
+                  ) : null}
+
                   <View style={styles.timeCueRow}>
                     <Text
                       testID={`suggestion-time-${suggestion.id}`}
@@ -466,6 +490,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 19,
     letterSpacing: -0.2,
+  },
+  noteText: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 4,
+    fontStyle: 'italic',
   },
   timeCueRow: {
     flexDirection: 'row',

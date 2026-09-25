@@ -6,6 +6,7 @@
  */
 
 import {
+  ActionableExtraction,
   ClassificationResult,
   QuarantineReason,
   RawNotificationPayload,
@@ -145,6 +146,188 @@ const PACKAGE_MERCHANT_MAP: Record<string, string> = {
   'com.practo.client': 'Practo',
 };
 
+// Chat Media Placeholders & Noise Patterns
+const CHAT_MEDIA_REGEX = /(?:📷|📸)?\s*photo\b|📷|📸|(?:🎤|🎙️)?\s*voice\s*message\b|🎤|🎙️|(?:📹|🎥)?\s*video\b|📹|🎥|(?:👾|🎭)?\s*(?:sticker|gif)\b|👾|🎭|\b(?:audio\s*message|document|contact\s*card|live\s*location)\b/i;
+const CHAT_GREETINGS_SMALLTALK_REGEX = /^(?:good\s+(?:morning|night|afternoon|evening)|gm|gn|hi|hello|hey|namaste|pranam|radhe\s+radhe|ram\s+ram|jai\s+shri\s+ram|jai\s+jinendra|salaam|adaab|kahan\s+ho|kaha\s+ho|kidhar\s+ho|where\s+are\s+you|kab\s+aaoge|kab\s+tak\s+aaoge|kya\s+kar\s+rahe\s+ho|kya\s+kar\s+rhi\s+ho|kya\s+chal\s+raha\s+hai|what'?s\s+up|wassup|kaise\s+ho|kaisi\s+ho|how\s+are\s+you|sab\s+theek|aur\s+batao|happy\s+birthday|happy\s+anniversary|congrats|congratulations)[.!?\s]*$/i;
+const CHAT_SINGLE_WORD_ACK_REGEX = /^(?:ok|okay|okk|k|kk|haa|ha|haan|theek\s+hai|thik\s+h|thik\s+hai|theek\s+h|achha|accha|achha\s+ji|yes|no|nahi|nah|yep|nope|done|noted|sure|alright|all\s+right|cool|perfect|bye|tata|cya|see\s+you|take\s+care|shukriya|thanks|thank\s+you|dhanyawad|hmmm|hmm|hm|lol|rofl|lmao)[\s\p{Emoji}.!?]*$/iu;
+
+export function isChatNoise(message: string): boolean {
+  const trimmed = message.trim();
+  if (!trimmed) return true;
+  if (/^[\p{Emoji}\s\p{P}]+$/u.test(trimmed)) return true;
+  if (CHAT_MEDIA_REGEX.test(trimmed)) return true;
+  if (CHAT_GREETINGS_SMALLTALK_REGEX.test(trimmed)) return true;
+  if (CHAT_SINGLE_WORD_ACK_REGEX.test(trimmed)) return true;
+  return false;
+}
+
+const NON_SENDER_PREFIXES = /^(?:urgent|reminder|note|task|alert|important|notice|warning|update|fyi|todo|to-do|attn|attention)$/i;
+
+export function extractChatSenderAndMessage(title: string, text: string): { sender: string; message: string; isGroup: boolean } {
+  const cleanTitle = (title || '').trim();
+  const cleanText = (text || '').trim();
+
+  // Strip message counter from title: e.g. "Mummy (2 messages)" -> "Mummy"
+  const strippedTitle = cleanTitle.replace(/\s*\(\d+\s*(?:new\s+)?messages?\)/i, '').trim();
+
+  // Check if title has "Group: Sender" format (e.g. "Sharma Parivar: Mummy" or "Sharma Parivar: Papa")
+  let groupFromTitle: string | null = null;
+  let senderFromTitle: string | null = null;
+  const titleColonMatch = strippedTitle.match(/^([^:\n]{1,40}):\s+([^:\n]{1,30})$/);
+  if (titleColonMatch) {
+    const left = titleColonMatch[1].trim();
+    const right = titleColonMatch[2].trim();
+    if (!NON_SENDER_PREFIXES.test(right) && !/^\d+\s*messages?$/i.test(right) && !/^(?:whatsapp|telegram|signal|messages?)$/i.test(right)) {
+      groupFromTitle = left;
+      senderFromTitle = right;
+    }
+  }
+
+  // Match inline sender prefix in text: e.g. "Mummy: dahi le aana", "✨Mummy✨: dahi le aana", "Dr. Sharma: medicine le lena"
+  const inlineMatch = cleanText.match(/^([^\n\r:]{1,35}):\s+(.+)$/s);
+  if (inlineMatch) {
+    const inlineSender = inlineMatch[1].trim();
+    const inlineMsg = inlineMatch[2].trim();
+    // Verify it is not a message label (e.g. "Urgent:", "Note:"), not an URL, and not a clock timestamp
+    if (
+      !NON_SENDER_PREFIXES.test(inlineSender) &&
+      !/^\d{1,2}(?::\d{2})?(?:\s*(?:am|pm|baje))?$/i.test(inlineSender) &&
+      !/^https?$/i.test(inlineSender)
+    ) {
+      const isGroup = (groupFromTitle !== null) || (strippedTitle.length > 0 && strippedTitle.toLowerCase() !== inlineSender.toLowerCase() && !/whatsapp/i.test(strippedTitle));
+      return {
+        sender: inlineSender,
+        message: inlineMsg,
+        isGroup,
+      };
+    }
+  }
+
+  if (senderFromTitle) {
+    return {
+      sender: senderFromTitle,
+      message: cleanText,
+      isGroup: true,
+    };
+  }
+
+  let sender = strippedTitle;
+  if (!sender || /^(?:whatsapp|telegram|signal|messages?)$/i.test(sender)) {
+    sender = 'Contact';
+  }
+
+  return {
+    sender,
+    message: cleanText,
+    isGroup: false,
+  };
+}
+
+// Actionable request patterns in English & Hinglish
+const CHAT_BRING_ERRAND_REGEX = /\b(?:bring|buy|get|fetch|pick\s*up|collect|drop|order|purchase|kharid(?:na|o|iye|ke)?|le\s*(?:a+na|a+o|i?ye|la+na|lao|lena|le\s*lo|lete\s*a+na)|(?:leke|le\s*kar|lekr)\s*(?:a+na|a+o|i?ye)?|la+na|lao|pack\s*kara\s*le(?:na|o)|(?:manga|mangwa)\s*(?:lena|lo|dena|do))\b/i;
+const CHAT_CALL_REGEX = /\b(?:call|phone|ring|contact|baat\s*kar(?:na|o|le(?:na|o))|msg|message)\b/i;
+const CHAT_MEDICINE_REGEX = /\b(?:medicine|dawai|dawa|tablet|goli|pills?)\b/i;
+const CHAT_PAY_FINANCE_REGEX = /\b(?:pay|bhar\s*de(?:na|o)?|transfer|bhej\s*de(?:na|o)?|bhejo|send\s+money|recharge|de\s*de(?:na|o)?|chuka\s*de(?:na|o)?)\b/i;
+const CHAT_FINANCE_OBJECTS = /\b(?:bill|electricity|bijli|wifi|broadband|rent|kiraya|fees?|fee|dues|emi|\d+\s*(?:rs|rupees|inr|₹)|(?:rs\.?|₹|inr)\s*\d+|paise|rupaye)\b/i;
+const CHAT_CHORES_REGEX = /\b(?:lock|band\s*kar(?:na|o|de(?:na|o)?)?|close|shut|switch\s*off|turn\s*off|chala\s*de(?:na|o)|on\s*kar(?:na|o|de(?:na|o)?)?|kundi\s*laga(?:na|o|iye)?(?:\s*de(?:na|o)?)?|water|clean|wash|iron)\b/i;
+const CHAT_CHORES_OBJECTS = /\b(?:door|darwaza|gate|geyser|ac|cooler|fan|light|motor|tap|nal|paani|gas|stove|cylinder|plants|trash|kachra|room|clothes|kapde|kundi)\b/i;
+const CHAT_GENERAL_ACTIONABLE_REGEX = /\b(?:yaad\s*se|dhyan\s*se|bhul\s*mat\s*jana|bhool\s*mat\s*jana|don't\s*forget\s*to|remember\s*to|make\s*sure\s*to|kar\s*de(?:na|o)|kar\s*le(?:na|o)|karna\s*hai|kar\s*dijiye|dekh\s*le(?:na|o))\b/i;
+
+export function isActionableChatMessage(title: string, text: string): boolean {
+  const { message } = extractChatSenderAndMessage(title, text);
+  if (isChatNoise(message)) return false;
+
+  // 1. Bring / Errand: e.g. "dahi le aana aate waqt", "dahi leke aana", "please bring milk", "buy vegetables"
+  if (CHAT_BRING_ERRAND_REGEX.test(message)) return true;
+
+  // 2. Call / Contact: e.g. "call uncle tomorrow", "phone kar do bhaiya ko"
+  if (CHAT_CALL_REGEX.test(message)) return true;
+
+  // 3. Medicine / Health: e.g. "medicine le lena 8 baje"
+  if (CHAT_MEDICINE_REGEX.test(message)) return true;
+
+  // 4. Pay / Transfer: e.g. "pay electricity bill tonight", "500 rs transfer kar do"
+  if (CHAT_PAY_FINANCE_REGEX.test(message) && (CHAT_FINANCE_OBJECTS.test(message) || /\b(?:to|ko)\b/i.test(message))) return true;
+
+  // 5. Chores: e.g. "lock the door", "geyser off kar do", "kundi laga dena"
+  if (CHAT_CHORES_REGEX.test(message) && CHAT_CHORES_OBJECTS.test(message)) return true;
+
+  // 6. General actionable Hinglish cues: e.g. "yaad se gate lock kar dena", "transfer kar do"
+  if (CHAT_GENERAL_ACTIONABLE_REGEX.test(message)) return true;
+
+  return false;
+}
+
+const POLITE_PREFIX_REGEX = /^(?:(?:good\s+(?:morning|evening|afternoon|night)|gm|gn|hi|hello|hey|namaste|pranam|radhe\s+radhe)\s*[,.!]?\s*|(?:please|pls|plz|kindly|can\s+you\s+please|could\s+you\s+please|can\s+you|could\s+you|yaad\s+se|dhyan\s+se|bhul\s+mat\s+jana|bhool\s+mat\s+jana|ek\s+baar|zara|arrey?|arre|oye|ooye|suno|listen|beta(?:\s*ji)?|bhai(?:ya)?|dear|babu|bachha|urgent|reminder|note|task|important|attn|attention)\s*[:,]?\s*)/i;
+
+export function cleanChatTaskTitle(message: string): string {
+  let title = message.trim();
+  let prev = '';
+  while (prev !== title) {
+    prev = title;
+    title = title.replace(POLITE_PREFIX_REGEX, '').trim();
+  }
+  title = title.replace(/[?]+$/, '').trim();
+  if (title.length > 0) {
+    title = title.charAt(0).toUpperCase() + title.slice(1);
+  }
+  return title;
+}
+
+export function extractChatActionVerb(message: string): string {
+  if (/\btransfer\b/i.test(message)) return 'Transfer';
+  if (/\b(?:pay|bhar\s*de|recharge|chuka)\b/i.test(message)) return 'Pay';
+  if (/\b(?:call|phone|ring|contact|baat\s*kar)\b/i.test(message)) return 'Call';
+  if (/\b(?:medicine|dawai|dawa|tablet|goli|pills?)\b/i.test(message)) return 'Take';
+  if (/\b(?:lock|kundi\s*laga)\b/i.test(message)) return 'Lock';
+  if (/\b(?:buy|kharid(?:na|o)?)\b/i.test(message)) return 'Buy';
+  if (/\b(?:bring|get|fetch|pick\s*up|collect|le\s*(?:a+na|a+o|i?ye|la+na|lao|lena|lete\s*a+na)|(?:leke|le\s*kar|lekr)\s*(?:a+na|a+o|i?ye)?|la+na|lao|(?:manga|mangwa)\s*(?:lena|lo|dena|do))\b/i.test(message)) return 'Bring';
+  if (/\b(?:send|bhej(?:na|o)?)\b/i.test(message)) return 'Send';
+  if (/\b(?:clean|wash)\b/i.test(message)) return 'Clean';
+  if (/\b(?:turn\s*off|switch\s*off|band\s*kar(?:na|o)?)\b/i.test(message)) return 'Turn off';
+  return 'Review';
+}
+
+const FAMILY_REGEX = /\b(?:mummy|mum|mom|maa|mataji|papa|dad|father|pitaji|bhai|bhaiya|brother|bro|behen|didi|sister|sis|bhabhi|chacha|chachi|mama|mami|dada|dadi|nana|nani|uncle|aunt|aunty|wife|husband|beta|beti|family|parivar|parivaar)\b/i;
+
+export function parseActionableChatMessage(
+  title: string,
+  text: string,
+  packageName?: string,
+  now: Date = new Date()
+): ActionableExtraction | null {
+  if (!isActionableChatMessage(title, text)) {
+    return null;
+  }
+
+  const { sender, message } = extractChatSenderAndMessage(title, text);
+  const cleanTitle = cleanChatTaskTitle(message);
+  const actionVerb = extractChatActionVerb(message);
+  const dateInfo = extractDate(message, now, true);
+
+  const isTelegram = !!(packageName && /telegram/i.test(packageName));
+  const appLabel = isTelegram ? 'Telegram' : 'WhatsApp';
+  const tagApp = isTelegram ? 'telegram' : 'whatsapp';
+
+  const isFamily = FAMILY_REGEX.test(sender) || FAMILY_REGEX.test(title);
+  const tags = isFamily ? [tagApp, 'family'] : [tagApp, 'chat'];
+  const sourceAppName = `${sender} · ${appLabel}`;
+  const context = `${appLabel} message from ${sender}`;
+
+  return {
+    title: cleanTitle,
+    actionVerb,
+    context,
+    inferredDueDate: dateInfo.date.toISOString(),
+    armed: dateInfo.armed,
+    category: 'personal',
+    tags,
+    confidence: 0.95,
+    notes: message,
+    sourceAppName,
+  };
+}
+
 /**
  * Checks if notification contains sensitive credentials/OTPs that must never be processed.
  */
@@ -166,7 +349,15 @@ export function checkNoise(title: string, text: string, pkg?: string): { isNoise
   if (SYSTEM_ALERT_REGEX.test(combined)) return { isNoise: true, reason: 'system_status' };
   if (RATING_FEEDBACK_REGEX.test(combined)) return { isNoise: true, reason: 'unactionable' };
 
-  if (pkg && CHAT_PACKAGES.has(pkg) && !/\b(?:pay|due|flight|pickup|appointment)\b/i.test(combined)) {
+  const isChatPkg = (pkg && (CHAT_PACKAGES.has(pkg) || /whatsapp|telegram/i.test(pkg))) || false;
+  if (isChatPkg) {
+    const { message } = extractChatSenderAndMessage(title, text);
+    if (isChatNoise(message)) {
+      return { isNoise: true, reason: 'chat' };
+    }
+    if (isActionableChatMessage(title, text)) {
+      return { isNoise: false };
+    }
     const promoCheck = parsePromo(title, text, pkg);
     if (!promoCheck) {
       return { isNoise: true, reason: 'chat' };
@@ -253,7 +444,23 @@ export function classifyNotification(payload: RawNotificationPayload, now: Date 
   // Stage 3: Actionable To-Do Engine
   const merchant = resolveMerchant(title, packageName);
 
-  // 3A. Delivery & Logistics
+  // 3A. WhatsApp & Family Chat Actionable Errands
+  const isChatPkg = !!(packageName && (CHAT_PACKAGES.has(packageName) || /whatsapp|telegram/i.test(packageName)));
+  const isChat = isChatPkg || (!packageName && isActionableChatMessage(title, text));
+  if (isChat) {
+    const chatActionable = parseActionableChatMessage(title, text, packageName, now);
+    if (chatActionable) {
+      const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime;
+      return {
+        stream: 'actionable',
+        actionable: chatActionable,
+        confidence: chatActionable.confidence,
+        evaluationTimeMs: elapsed,
+      };
+    }
+  }
+
+  // 3B. Delivery & Logistics
   if (DELIVERY_REGEX.test(combined)) {
     const dateInfo = extractDate(combined, now);
     let itemDesc = 'package';
