@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Remy Spotlight</title>
+  <link rel="stylesheet" href="spotlight.css">
+</head>
+<body>
+  <div class="spotlight-container">
+    <div class="input-wrapper">
+      <div class="hud-glyph">◆</div>
+      <input
+        type="text"
+        id="capture-input"
+        placeholder="Capture thought... (e.g. call accountant 5pm, dahi 15m)"
+        autocomplete="off"
+        spellcheck="false"
+        autofocus
+      />
+      <div class="hud-shortcut">↵ Enter</div>
+    </div>
+    <div id="preview-bar" class="preview-bar hidden">
+      <div class="preview-left">
+        <span id="badge-preset" class="badge preset-badge">Inbox</span>
+        <span id="preview-time" class="preview-time"></span>
+        <span id="badge-lingo" class="badge lingo-badge hidden"></span>
+      </div>
+      <div id="preview-music" class="preview-music hidden">
+        <span class="music-icon">🎵</span>
+        <span id="music-text" class="music-text"></span>
+      </div>
+    </div>
+  </div>
+  <script src="spotlight.js"></script>
+</body>
+</html>

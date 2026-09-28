@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Remy Reminders - Agenda</title>
+  <link rel="stylesheet" href="agenda.css">
+</head>
+<body>
+  <div class="agenda-container">
+    <header class="agenda-header">
+      <div class="header-left">
+        <div class="header-logo">
+          <span class="logo-glyph">◆</span>
+          <span class="logo-title">REMY</span>
+          <span class="logo-subtitle">AGENDA</span>
+        </div>
+        <div id="sync-badge" class="sync-badge idle">
+          <span class="sync-dot"></span>
+          <span id="sync-text">Synced</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <input
+          type="text"
+          id="search-input"
+          class="search-input"
+          placeholder="Filter reminders..."
+        />
+        <button id="btn-sync" class="btn-secondary" title="Sync with Cloud API">↻ Sync</button>
+      </div>
+    </header>
+
+    <nav class="filter-tabs">
+      <button class="tab-btn active" data-tab="pending">Due & Pending <span id="count-pending" class="count-pill">0</span></button>
+      <button class="tab-btn" data-tab="snoozed">Snoozed <span id="count-snoozed" class="count-pill">0</span></button>
+      <button class="tab-btn" data-tab="completed">Completed <span id="count-completed" class="count-pill">0</span></button>
+      <button class="tab-btn" data-tab="all">All <span id="count-all" class="count-pill">0</span></button>
+    </nav>
+
+    <main class="agenda-content">
+      <div id="reminders-list" class="reminders-list">
+        <!-- Rendered dynamically -->
+      </div>
+      <div id="empty-state" class="empty-state hidden">
+        <div class="empty-icon">◆</div>
+        <div class="empty-title">All clear</div>
+        <div class="empty-subtitle">Press <kbd>Alt+Shift+Space</kbd> anywhere to quick-capture a reminder</div>
+      </div>
+    </main>
+  </div>
+  <script src="agenda.js"></script>
+</body>
+</html>
