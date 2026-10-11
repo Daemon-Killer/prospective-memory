@@ -210,6 +210,8 @@ def create_app() -> FastAPI:
         return _NOW_PLAYING
 
     # Mount FastMCP SSE Starlette application for Claude Desktop, Cursor, and LLM SSE tool calling
+    from prospective_memory.agent_integration import mount_agent
+    mount_agent(app)
     app.mount("/mcp", mcp.sse_app(mount_path="/mcp"))
 
     return app
