@@ -46,6 +46,7 @@ def create_app(settings: Settings | None = None, *, store: Store | None = None,
     app = FastAPI(title="Remy Personal Agent", version="0.1.0", lifespan=lifespan,
                   docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(SharedMemoryBodyLimit)
+    app.state.agent_store = store
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(_request, exc):
@@ -69,10 +70,13 @@ def create_app(settings: Settings | None = None, *, store: Store | None = None,
         return JSONResponse({"detail": {"code": "memory_capacity", "message": "Shared memory capacity reached."}}, status_code=409)
 
     async def authenticate(x_agent_token: str | None = Header(default=None)):
-        if not secrets.compare_digest((x_agent_token or "").encode("utf-8"), settings.agent_token.encode("ascii")):
+        value = x_agent_token or ""
+        if not secrets.compare_digest(value.encode("utf-8"), settings.agent_token.encode("ascii")) and not await asyncio.to_thread(store.authenticate_device, value, settings.agent_token):
             raise HTTPException(401, detail="Missing or invalid agent token.")
 
     protected = [Depends(authenticate)]
+    from .pairing_routes import add_pairing_routes
+    add_pairing_routes(app, store, settings.agent_token, protected, clock)
 
     def personal_context():
         facts, snapshots = store.get_personal_context()

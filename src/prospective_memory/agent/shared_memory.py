@@ -221,6 +221,8 @@ class SharedMemoryBodyLimit:
             return await self.app(scope, receive, send)
         if path.endswith("/v1/learning/sync"):
             limit = MAX_SNAPSHOT_BYTES + 65536
+        elif "/v1/pairing/" in path:
+            limit = 4096
         elif "/v1/facts/" in path:
             limit = 65536
         else:

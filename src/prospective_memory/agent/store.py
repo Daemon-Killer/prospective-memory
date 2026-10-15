@@ -15,6 +15,7 @@ import sqlite3
 import threading
 from typing import Any, Iterator
 from uuid import uuid4
+from .pairing import PairingStoreMixin
 
 from .shared_memory import (MAX_DEVICES, MAX_FACTS, MemoryConflict, MemoryLimit,
                             learning_summary)
@@ -63,7 +64,7 @@ def _limit(value: int) -> int:
     return value
 
 
-class Store:
+class Store(PairingStoreMixin):
     """Each operation owns a connection; SQLite transactions arbitrate other writers."""
 
     def __init__(self, path: str):

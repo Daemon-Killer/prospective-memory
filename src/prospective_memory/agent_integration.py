@@ -120,7 +120,13 @@ class AgentMount:
         provided = dict(scope.get('headers', [])).get(b'x-agent-token', b'')
         if not token:
             response = JSONResponse({'detail': {'code': 'agent_unconfigured'}}, status_code=503)
-        elif not secrets.compare_digest(provided, token.encode('utf-8')):
+        elif not secrets.compare_digest(provided, token.encode('utf-8')) and not (
+            # Only these two endpoints are public. Device credentials are checked
+            # by the child API against its durable, revocable credential hashes.
+            (scope.get('method') == 'GET' and scope.get('path') == scope.get('root_path', '') + '/connect')
+            or (scope.get('method') == 'POST' and scope.get('path') == scope.get('root_path', '') + '/v1/pairing/exchange')
+            or __import__('re').fullmatch(rb'rdv_[a-f0-9]{64}', provided)
+        ):
             response = JSONResponse({'detail': 'Missing or invalid agent token.'}, status_code=401)
         else:
             try:
@@ -128,6 +134,15 @@ class AgentMount:
             except Exception:
                 response = JSONResponse({'detail': {'code': 'agent_storage_unavailable'}}, status_code=503)
             else:
+                if not secrets.compare_digest(provided, token.encode('utf-8')) and __import__('re').fullmatch(rb'rdv_[a-f0-9]{64}', provided):
+                    try:
+                        valid = await asyncio.to_thread(app.state.agent_store.authenticate_device, provided.decode('ascii'), token)
+                    except Exception:
+                        await JSONResponse({'detail': {'code': 'agent_storage_unavailable'}}, status_code=503)(scope, receive, send)
+                        return
+                    if not valid:
+                        await JSONResponse({'detail': 'Missing or invalid agent token.'}, status_code=401)(scope, receive, send)
+                        return
                 started = False
                 finished = False
 

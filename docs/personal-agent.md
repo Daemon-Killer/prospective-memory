@@ -5,6 +5,23 @@ The existing Remy API mounts its companion at `/agent`. Configure a separate
 including `/agent/health`, requires `X-AGENT-TOKEN`. Do not embed this token in
 the APK, repository, logs or a publicly shared download.
 
+Phone onboarding now supports a private setup link instead of copying this
+master token. An authenticated client creates one using `POST /v1/pairing/links`.
+The one-year bearer key is carried in the fragment of `/agent/connect#key=...`;
+the landing page has no external assets, disables caching/referrers, and launches
+an explicit Android intent for `com.remy.reminders`. Remy asks for confirmation,
+then exchanges the key and installation ID at public `POST /v1/pairing/exchange`.
+The resulting per-installation credential goes directly to Android's encrypted
+storage. The server persists only hashes. Exact retries return the same device
+credential, revoked credentials cannot be restored by replay, and rotating the
+master token invalidates existing links and device credentials.
+
+Authenticated clients can list setup-link metadata and devices, revoke links to
+block new installations, or revoke a device to immediately stop its access. A
+setup link does not choose notification permissions. Keep recovery links private;
+do not embed them in a public APK. Android updates preserve the connection;
+reinstalls can use a saved link without access to the original PC.
+
 Hosted memory uses the existing PostgreSQL connection configuration and an
 isolated `remy_agent` schema. It never falls back to an ephemeral hosted SQLite
 file. Local development without PostgreSQL uses `agent.sqlite3` in Remy's data
