@@ -55,3 +55,25 @@ npm run build
 # Start desktop app
 npm start
 ```
+
+## Personal Assistant (1.1)
+
+Open **Personal Assistant** in the Agenda and paste your private Remy setup
+link. Each Windows/Mac installation receives a revocable device credential,
+kept in the main process and encrypted using Windows DPAPI or macOS Keychain.
+The renderer never receives the credential. The assistant provides a daily
+brief, shared fact/goal/routine/preference editing, and search across selected
+phone notification previews and watch check-ins. Browser history, active
+windows and desktop notifications are not captured automatically.
+
+**Forget this connection** removes the local credential. Revoke the device
+from your phone’s Personal Assistant connection screen to also block server
+access. If offline, local reminders still work; assistant errors preserve the
+current fact draft. Repeated fact writes use the same ID and revision checks.
+
+Build native packages with `npm run package:win` on Windows and
+`npm run package:mac` on macOS. The GitHub **Build Remy Desktop** workflow checks
+and packages both platforms, including Intel and Apple silicon Mac archives.
+Packages are currently unsigned; distribution signing/notarization requires
+owner certificates. Windows portable builds preserve app data in the normal
+Remy user-data directory.
