@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "packageName": "com.remy.reminders",
-  "versionCode": 3,
-  "versionName": "1.0.2",
+  "versionCode": 4,
+  "versionName": "1.0.3",
   "apkUrl": "https://drive.google.com/uc?export=download&id=17XvYljBwXW31q7T_c2T0Jmr7zrNs4YTt&confirm=t",
-  "sizeBytes": 53419619,
-  "sha256": "859f164084ff61f7fedb3812a38ca4d6e4c9e950eacb7e22a948df31d65dde99",
-  "notes": "Two-page 4x2 task widget and consent-based app updates."
+  "sizeBytes": 53460403,
+  "sha256": "1ef8956e245d6e2085bbe9f9456d647934cbe308b43fa97844f24e890de15342",
+  "notes": "On-demand notification scanning and cleanup, notification-import deletion, improved WhatsApp reading, and +9114 marketing-call filtering."
 }
