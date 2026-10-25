@@ -21,10 +21,11 @@ export function initPersonalAssistant(api: AssistantAPI) {
   document.body.append(dialog);
   const el = <T extends HTMLElement = HTMLElement>(id: string) => dialog.querySelector<T>('#' + id)!;
   let busy = false; let deviceId = ''; let editing: Fact | null = null;
+  let newFactId = `fact-${crypto.randomUUID()}`;
   const request = async (method: string, route: string, body?: unknown) => JSON.parse(await api.assistantRequest(method, route, body === undefined ? undefined : JSON.stringify(body)));
   function line(parent: HTMLElement, text: string, tag = 'p') { const item = document.createElement(tag); item.textContent = text; parent.append(item); return item; }
   function button(parent: HTMLElement, label: string, action: () => void) { const item = document.createElement('button'); item.textContent = label; item.className = 'btn-secondary'; item.type = 'button'; item.onclick = action; parent.append(item); }
-  function resetDraft() { editing = null; el<HTMLTextAreaElement>('assistant-fact').value = ''; el('assistant-cancel-edit').hidden = true; }
+  function resetDraft() { editing = null; newFactId = `fact-${crypto.randomUUID()}`; el<HTMLTextAreaElement>('assistant-fact').value = ''; el('assistant-cancel-edit').hidden = true; }
   async function act(operation: () => Promise<void>) {
     if (busy) return; busy = true; el('assistant-status').textContent = 'Working…';
     dialog.querySelectorAll<HTMLButtonElement>('button').forEach(item => { if (item.id !== 'assistant-close') item.disabled = true; });
@@ -59,7 +60,7 @@ export function initPersonalAssistant(api: AssistantAPI) {
   el('assistant-cancel-edit').onclick = resetDraft;
   el('assistant-fact-form').onsubmit = event => { event.preventDefault(); void act(async () => {
     const value = el<HTMLTextAreaElement>('assistant-fact').value.trim(); if (!value) throw new Error('Enter something to remember.');
-    const id = editing?.id || `fact-${crypto.randomUUID()}`;
+    const id = editing?.id || newFactId;
     await request('PUT', `/v1/facts/${id}`, { base_revision: editing?.revision || 0, kind: el<HTMLSelectElement>('assistant-kind').value, value, source_device_id: deviceId }); resetDraft(); await refresh();
   }); };
   el('assistant-search-form').onsubmit = event => { event.preventDefault(); void act(async () => {

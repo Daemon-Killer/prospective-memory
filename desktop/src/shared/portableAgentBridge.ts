@@ -75,11 +75,3 @@ export class PortableAgentBridge implements AgentBridge {
   }
 }
 
-export function browserDeviceId(): string {
-  const key = 'remy-assistant-browser-device-v1';
-  try {
-    const existing = localStorage.getItem(key);
-    if (existing && /^web-[A-Za-z0-9-]{8,80}$/.test(existing)) return existing;
-    const id = `web-${crypto.randomUUID()}`; localStorage.setItem(key, id); return id;
-  } catch { return `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`; }
-}
