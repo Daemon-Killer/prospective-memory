@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "packageName": "com.remy.reminders",
-  "versionCode": 4,
-  "versionName": "1.0.3",
+  "versionCode": 5,
+  "versionName": "1.0.4",
   "apkUrl": "https://drive.google.com/uc?export=download&id=17XvYljBwXW31q7T_c2T0Jmr7zrNs4YTt&confirm=t",
-  "sizeBytes": 53460403,
-  "sha256": "1ef8956e245d6e2085bbe9f9456d647934cbe308b43fa97844f24e890de15342",
-  "notes": "On-demand notification scanning and cleanup, notification-import deletion, improved WhatsApp reading, and +9114 marketing-call filtering."
+  "sizeBytes": 53579114,
+  "sha256": "b3903f9133a295a76b30e8a785a0c7d12223d07537854d3fdd1c155223420984",
+  "notes": "Improvements and fixes."
 }
