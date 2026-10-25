@@ -10,8 +10,11 @@ import { Reminder } from '../types';
 
 export { compileCapture, compileCaptureWithIntent, expandLingo, DEFAULT_LINGO };
 
-export function compileToReminder(rawText: string): { reminder: Reminder; draft: CaptureDraft } {
-  const draft = compileCaptureWithIntent(rawText);
+export function compileToReminder(
+  rawText: string,
+  activeMode?: 'work' | 'home' | 'all'
+): { reminder: Reminder; draft: CaptureDraft } {
+  const draft = compileCaptureWithIntent(rawText, 'inbox', new Date(), DEFAULT_LINGO, activeMode);
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
 
@@ -25,6 +28,8 @@ export function compileToReminder(rawText: string): { reminder: Reminder; draft:
     createdAt: now,
     updatedAt: now,
     armed: draft.armed !== false,
+    context: draft.context || (activeMode && activeMode !== 'all' ? activeMode : 'all'),
+    tags: draft.tags || null,
   };
 
   return { reminder, draft };

@@ -1,0 +1,49 @@
+name: Build Remy Desktop
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, codex/desktop-wear-assistant]
+    paths: ['desktop/**', 'reminder app/src/utils/**', 'reminder app/src/types/**', 'reminder app/src/services/agentPairingLink.ts', '.github/workflows/build-desktop.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            command: package:win
+            artifact: Remy-Windows
+            pattern: desktop/releases/*.exe
+          - os: macos-latest
+            command: package:mac
+            artifact: Remy-Mac
+            pattern: desktop/releases/*.zip
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+        working-directory: desktop
+      - run: npm run typecheck
+        working-directory: desktop
+      - run: npm test
+        working-directory: desktop
+      - run: npm run ${{ matrix.command }}
+        working-directory: desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.pattern }}
+          if-no-files-found: error
+          retention-days: 30

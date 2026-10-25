@@ -90,6 +90,8 @@ export class SyncEngine {
     }
   }
 
+  private burstTimers: NodeJS.Timeout[] = [];
+
   public triggerDebounced(delayMs: number = 300): Promise<SyncResult> {
     return new Promise((resolve) => {
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
@@ -98,6 +100,31 @@ export class SyncEngine {
         resolve(res);
       }, delayMs);
     });
+  }
+
+  public triggerBurstSync(): void {
+    this.triggerDebounced(100);
+    this.clearBurstTimers();
+    // Schedule follow-up syncs at 2.5s and 6s to pick up rapid cross-device updates
+    const t1 = setTimeout(() => {
+      this.syncNow().catch(() => {});
+    }, 2500);
+    const t2 = setTimeout(() => {
+      this.syncNow().catch(() => {});
+    }, 6000);
+    this.burstTimers.push(t1, t2);
+  }
+
+  private clearBurstTimers(): void {
+    for (const t of this.burstTimers) {
+      clearTimeout(t);
+    }
+    this.burstTimers = [];
+  }
+
+  public setActive(active: boolean): void {
+    const interval = active ? 5000 : 30000;
+    this.startAutoSync(interval);
   }
 
   public startAutoSync(intervalMs: number = 30000): void {
@@ -112,6 +139,7 @@ export class SyncEngine {
       clearInterval(this.pollTimer);
       this.pollTimer = null;
     }
+    this.clearBurstTimers();
   }
 
   public async syncNow(): Promise<SyncResult> {
@@ -204,7 +232,12 @@ export class SyncEngine {
             const decision = resolveLww(local || undefined, remote);
 
             if (decision.action === 'apply_remote' || decision.action === 'delete') {
-              this.ledger.upsertReminder(decision.winner);
+              const winnerWithMetadata: Reminder = {
+                ...decision.winner,
+                context: decision.winner.context ?? local?.context ?? 'all',
+                tags: decision.winner.tags ?? local?.tags ?? null,
+              };
+              this.ledger.upsertReminder(winnerWithMetadata);
               applied++;
             }
           }

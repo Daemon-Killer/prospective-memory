@@ -4,6 +4,7 @@ import path from 'path';
 export class SpotlightWindow {
   private window: BrowserWindow | null = null;
   private isVisible: boolean = false;
+  private lastShowTime: number = 0;
 
   constructor() {
     this.createWindow();
@@ -51,6 +52,9 @@ export class SpotlightWindow {
     this.window.loadFile(path.join(__dirname, '../renderer/spotlight/index.html'));
 
     this.window.on('blur', () => {
+      if (Date.now() - this.lastShowTime < 400) {
+        return;
+      }
       this.hide();
     });
 
@@ -65,6 +69,7 @@ export class SpotlightWindow {
       this.createWindow();
     }
     if (this.window) {
+      this.lastShowTime = Date.now();
       try {
         const cursor = screen.getCursorScreenPoint();
         const currentDisplay = screen.getDisplayNearestPoint(cursor);
@@ -75,8 +80,11 @@ export class SpotlightWindow {
         this.window.setPosition(posX, posY);
       } catch (_) {}
 
+      this.window.setAlwaysOnTop(true, 'screen-saver');
+      this.window.setVisibleOnAllWorkspaces(true);
       this.window.show();
       this.window.focus();
+      this.window.moveTop();
       this.window.webContents.send('spotlight:focus');
       this.isVisible = true;
     }
@@ -90,7 +98,7 @@ export class SpotlightWindow {
   }
 
   public toggle(): void {
-    if (this.isVisible) {
+    if (this.isVisible && this.window && this.window.isVisible()) {
       this.hide();
     } else {
       this.show();

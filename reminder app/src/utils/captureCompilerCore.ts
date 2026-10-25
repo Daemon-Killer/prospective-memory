@@ -45,6 +45,7 @@ export interface CaptureDraft {
   dueDate: Date;
   armed: boolean;
   tags?: string[];
+  context?: 'work' | 'home' | 'personal' | 'general';
   musicDraft?: MusicDraft;
 }
 
@@ -378,11 +379,63 @@ export function parseMusicIntent(
   return null;
 }
 
+export const WORK_KEYWORDS_REGEX =
+  /\b(jira|pull\s*requests?|pr\s*reviews?|client\s*emails?|quarterly\s*reviews?|standups?|sprints?|demos?|deploy(?:ments?)?|code\s*reviews?|bug\s*fix(?:es)?|slide\s*decks?|presentations?|pitches?|meeting\s*notes?|timesheets?|okrs?|kpis?|invoice(?:\s*to\s*client)?|scrum|deliverables?|1:1|roadmap|on-call|production\s*outage|prod\s*deploy)\b/i;
+
+export const HOME_KEYWORDS_REGEX =
+  /\b(dahi|milk|bread|eggs|groceries|grocery|supermarkets?|kirana|plumbers?|electricians?|mechanics?|carpenters?|dishwashers?|laundry|clean\s*kitchen|clean\s*rooms?|clean\s*house|vacuum(?:ing)?|dusting|water\s*plants?|trash|garbages?|bring\s*in|bring\s*groceries|buy\s+[a-zA-Z0-9_\u00C0-\u024F-]+|paneer|pick\s*up\s*dry\s*cleaning|dry\s*cleaning|cook\s*dinner|make\s*dinner|feed\s*(?:dog|cat|pets?)|vets?|chores?|call\s+(?:mom|dad|mother|father|wife|husband|parents?|doctor|plumber|electrician|home|family|kids?|someone)|forgot\s+to\s+call)\b/i;
+
+export function inferCaptureContext(
+  text: string,
+  tags?: string[],
+  activeMode?: 'work' | 'home' | 'all'
+): 'work' | 'home' | 'personal' | 'general' | undefined {
+  const lowerTags = tags?.map((t) => t.toLowerCase()) || [];
+
+  // 1. Explicit hashtag rules
+  if (lowerTags.includes('work') || lowerTags.includes('office') || lowerTags.includes('job')) {
+    return 'work';
+  }
+  if (
+    lowerTags.includes('home') ||
+    lowerTags.includes('personal') ||
+    lowerTags.includes('grocery') ||
+    lowerTags.includes('groceries') ||
+    lowerTags.includes('chore') ||
+    lowerTags.includes('chores') ||
+    lowerTags.includes('errand') ||
+    lowerTags.includes('errands') ||
+    lowerTags.includes('call') ||
+    lowerTags.includes('calls')
+  ) {
+    return 'home';
+  }
+
+  // 2. Natural language keywords
+  if (WORK_KEYWORDS_REGEX.test(text)) {
+    return 'work';
+  }
+  if (HOME_KEYWORDS_REGEX.test(text)) {
+    return 'home';
+  }
+
+  // 3. Mode fallback
+  if (activeMode === 'work') {
+    return 'work';
+  }
+  if (activeMode === 'home') {
+    return 'home';
+  }
+
+  return undefined;
+}
+
 export function compileCaptureWithIntent(
   raw: string,
   selectedChip: CaptureChip = 'inbox',
   now: Date = new Date(),
-  lingoTable: string = DEFAULT_LINGO
+  lingoTable: string = DEFAULT_LINGO,
+  activeMode?: 'work' | 'home' | 'all'
 ): CaptureDraft {
   const cleanedRaw = cleanListPrefix(raw);
   const { tags, stripped: tagStripped } = extractTags(cleanedRaw);
@@ -395,6 +448,7 @@ export function compileCaptureWithIntent(
 
   const musicTargetText = inferred ? inferred.strippedTitle : title;
   const musicDraft = parseMusicIntent(musicTargetText, hasTimeCue);
+  const context = inferCaptureContext(`${cleanedRaw} ${title}`, tags, activeMode);
 
   if (isChipTimed) {
     return {
@@ -405,6 +459,7 @@ export function compileCaptureWithIntent(
       dueDate: CHIP_CALC[selectedChip](now),
       armed: true,
       tags: tags.length > 0 ? tags : undefined,
+      context,
       musicDraft: musicDraft || undefined,
     };
   }
@@ -418,6 +473,7 @@ export function compileCaptureWithIntent(
       dueDate: inferred.dueDate,
       armed: true,
       tags: tags.length > 0 ? tags : undefined,
+      context,
       musicDraft: musicDraft || undefined,
     };
   }
@@ -430,6 +486,7 @@ export function compileCaptureWithIntent(
     dueDate: now,
     armed: false,
     tags: tags.length > 0 ? tags : undefined,
+    context,
     musicDraft: musicDraft || undefined,
   };
 }
@@ -438,9 +495,10 @@ export function compileCapture(
   raw: string,
   selectedChip: CaptureChip = 'inbox',
   now: Date = new Date(),
-  lingoTable: string = DEFAULT_LINGO
+  lingoTable: string = DEFAULT_LINGO,
+  activeMode?: 'work' | 'home' | 'all'
 ): CaptureDraft {
-  return compileCaptureWithIntent(raw, selectedChip, now, lingoTable);
+  return compileCaptureWithIntent(raw, selectedChip, now, lingoTable, activeMode);
 }
 
 /**
@@ -507,11 +565,12 @@ export function compileMultiLineCapture(
   raw: string,
   selectedChip: CaptureChip = 'inbox',
   now: Date = new Date(),
-  lingoTable: string = DEFAULT_LINGO
+  lingoTable: string = DEFAULT_LINGO,
+  activeMode?: 'work' | 'home' | 'all'
 ): CaptureDraft[] {
   const lines = splitMultiLine(raw);
   if (lines.length === 0) return [];
-  return lines.map((line) => compileCapture(line, selectedChip, now, lingoTable));
+  return lines.map((line) => compileCapture(line, selectedChip, now, lingoTable, activeMode));
 }
 
 /**

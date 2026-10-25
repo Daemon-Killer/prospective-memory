@@ -81,6 +81,16 @@ export interface Reminder {
 
   /** Optional cultural / leisure recommendation metadata (movies, shows, books, docs) */
   culturalMetadata?: CulturalMetadata | null;
+
+  /** Context environment bifurcation */
+  context?: 'work' | 'home' | 'personal' | 'general';
+
+  /** Hashtags attached to reminder */
+  tags?: string[];
+
+  /** Capture provenance used by notification-only bulk cleanup. Missing on legacy manual tasks. */
+  source?: 'manual' | 'notification';
+  sourcePackage?: string;
 }
 
 export type ReminderPriority = 'low' | 'medium' | 'high';
@@ -112,6 +122,10 @@ export interface CreateReminderInput {
   /** @deprecated Retired from active capture */
   inkData?: string | null;
   culturalMetadata?: CulturalMetadata | null;
+  context?: 'work' | 'home' | 'personal' | 'general';
+  tags?: string[];
+  source?: 'manual' | 'notification';
+  sourcePackage?: string;
 }
 
 export interface UpdateReminderInput {
@@ -124,6 +138,8 @@ export interface UpdateReminderInput {
   /** @deprecated Retired from active capture */
   inkData?: string | null;
   culturalMetadata?: CulturalMetadata | null;
+  context?: 'work' | 'home' | 'personal' | 'general';
+  tags?: string[];
 }
 
 export interface SnoozeReminderOptions {

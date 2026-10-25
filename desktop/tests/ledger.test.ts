@@ -212,6 +212,9 @@ describe('Desktop Local SQLite Ledger', () => {
   });
 
   it('reloads dynamically when database is modified externally on disk', async () => {
+    // Wait briefly so modification timestamp advances past Windows timer tick
+    await new Promise((r) => setTimeout(r, 25));
+
     // External process writes to tmpDbPath
     const externalLedger = new LocalLedger(tmpDbPath);
     await externalLedger.init();
@@ -249,5 +252,83 @@ describe('Desktop Local SQLite Ledger', () => {
     const list = ledger.listReminders();
     expect(list.length).toBe(1);
     expect(list[0].id).toBe('mirror-test');
+  });
+
+  it('persists and filters by context mode and tags', () => {
+    ledger.upsertReminder({
+      id: 'rem-work-1',
+      title: 'Review quarterly architecture doc',
+      dueDate: '2026-09-29T15:00:00.000Z',
+      status: 'pending',
+      snoozeCount: 0,
+      createdAt: '2026-09-29T10:00:00.000Z',
+      updatedAt: '2026-09-29T10:00:00.000Z',
+      context: 'work',
+      tags: ['office', 'review'],
+    });
+
+    ledger.upsertReminder({
+      id: 'rem-home-1',
+      title: 'Pick up milk from dairy',
+      dueDate: '2026-09-29T18:00:00.000Z',
+      status: 'pending',
+      snoozeCount: 0,
+      createdAt: '2026-09-29T10:00:00.000Z',
+      updatedAt: '2026-09-29T10:00:00.000Z',
+      context: 'home',
+      tags: ['groceries'],
+    });
+
+    ledger.upsertReminder({
+      id: 'rem-pers-1',
+      title: 'Call doctor for prescription',
+      dueDate: '2026-09-29T19:00:00.000Z',
+      status: 'pending',
+      snoozeCount: 0,
+      createdAt: '2026-09-29T10:00:00.000Z',
+      updatedAt: '2026-09-29T10:00:00.000Z',
+      context: 'personal',
+      tags: ['call'],
+    });
+
+    ledger.upsertReminder({
+      id: 'rem-gen-1',
+      title: 'Random thought note',
+      dueDate: '2026-09-29T20:00:00.000Z',
+      status: 'pending',
+      snoozeCount: 0,
+      createdAt: '2026-09-29T10:00:00.000Z',
+      updatedAt: '2026-09-29T10:00:00.000Z',
+      context: 'all',
+    });
+
+    const workRem = ledger.getReminder('rem-work-1');
+    expect(workRem?.context).toBe('work');
+    expect(workRem?.tags).toEqual(['office', 'review']);
+
+    const homeRem = ledger.getReminder('rem-home-1');
+    expect(homeRem?.context).toBe('home');
+    expect(homeRem?.tags).toEqual(['groceries']);
+
+    const workList = ledger.listReminders({ context: 'work' });
+    expect(workList.some((r) => r.id === 'rem-work-1')).toBe(true);
+    expect(workList.some((r) => r.id === 'rem-home-1')).toBe(false);
+    expect(workList.some((r) => r.id === 'rem-pers-1')).toBe(false);
+    expect(workList.some((r) => r.id === 'rem-gen-1')).toBe(false);
+
+    const homeList = ledger.listReminders({ context: 'home' });
+    expect(homeList.some((r) => r.id === 'rem-home-1')).toBe(true);
+    expect(homeList.some((r) => r.id === 'rem-pers-1')).toBe(true);
+    expect(homeList.some((r) => r.id === 'rem-gen-1')).toBe(true);
+    expect(homeList.some((r) => r.id === 'rem-work-1')).toBe(false);
+
+    const allList = ledger.listReminders({ context: 'all' });
+    expect(allList.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('stores and retrieves key-value app settings', () => {
+    expect(ledger.getSetting('active_mode', 'all')).toBe('all');
+    ledger.setSetting('active_mode', 'home');
+    expect(ledger.getSetting('active_mode', 'all')).toBe('home');
   });
 });

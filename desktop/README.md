@@ -6,7 +6,7 @@ Runs silently in the Windows system tray and summons an ultra-fast (<150ms) Swis
 ## Key Capabilities
 
 1. **System-Wide Global Hotkey & Spotlight HUD**:
-   - Shortcut: `Alt+Shift+Space` (with automatic fallback to `Ctrl+Shift+Space` / `Alt+Space`).
+   - Shortcut: `Ctrl+Alt+R` on Windows (`Cmd+Shift+R` on macOS). If unavailable, Remy registers one fallback and shows the active shortcut in the tray and Agenda. `Ctrl+Shift+K` is no longer registered.
    - Floating, centered Swiss Void (`#000000`) quick-capture HUD over any active window (VS Code, browser, games, PDF).
    - Typing thoughts (`call accountant 5pm`, `dahi 15m`) and pressing Enter compiles the prospective memory card, commits it to local SQLite, and hides immediately.
    - Live compiler preview with preset chip badges (`[+15m]`, `[+1h]`, `[Tomorrow]`), music intent chips (`🎵 play spb songs hindi`), and lingo expansion.
@@ -16,7 +16,7 @@ Runs silently in the Windows system tray and summons an ultra-fast (<150ms) Swis
    - Starts silently on launch without popping up heavy windows.
    - Right-click tray menu:
      - `Open Agenda`
-     - `Quick Capture` (`Alt+Shift+Space`)
+     - `Quick Capture` (shows the active shortcut)
      - `Sync Now`
      - `Quit Remy`
    - Clicking or double-clicking the tray icon toggles the Agenda window.
@@ -55,3 +55,25 @@ npm run build
 # Start desktop app
 npm start
 ```
+
+## Personal Assistant (1.1)
+
+Open **Personal Assistant** in the Agenda and paste your private Remy setup
+link. Each Windows/Mac installation receives a revocable device credential,
+kept in the main process and encrypted using Windows DPAPI or macOS Keychain.
+The renderer never receives the credential. The assistant provides a daily
+brief, shared fact/goal/routine/preference editing, and search across selected
+phone notification previews and watch check-ins. Browser history, active
+windows and desktop notifications are not captured automatically.
+
+**Forget this connection** removes the local credential. Revoke the device
+from your phone’s Personal Assistant connection screen to also block server
+access. If offline, local reminders still work; assistant errors preserve the
+current fact draft. Repeated fact writes use the same ID and revision checks.
+
+Build native packages with `npm run package:win` on Windows and
+`npm run package:mac` on macOS. The GitHub **Build Remy Desktop** workflow checks
+and packages both platforms, including Intel and Apple silicon Mac archives.
+Packages are currently unsigned; distribution signing/notarization requires
+owner certificates. Windows portable builds preserve app data in the normal
+Remy user-data directory.

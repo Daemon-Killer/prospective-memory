@@ -36,6 +36,7 @@ async function build() {
   // 1. Build main process
   await esbuild.build({
     entryPoints: ['src/main/index.ts'],
+    tsconfig: 'tsconfig.json',
     bundle: true,
     platform: 'node',
     target: 'node20',
@@ -48,6 +49,7 @@ async function build() {
   // 2. Build preload
   await esbuild.build({
     entryPoints: ['src/preload.ts'],
+    tsconfig: 'tsconfig.json',
     bundle: true,
     platform: 'node',
     target: 'node20',
@@ -60,6 +62,7 @@ async function build() {
   // 3. Build renderers
   await esbuild.build({
     entryPoints: ['src/renderer/spotlight/spotlight.ts'],
+    tsconfig: 'tsconfig.json',
     bundle: true,
     platform: 'browser',
     target: 'es2022',
@@ -69,11 +72,13 @@ async function build() {
 
   await esbuild.build({
     entryPoints: ['src/renderer/agenda/agenda.ts'],
+    tsconfig: 'tsconfig.json',
     bundle: true,
     platform: 'browser',
     target: 'es2022',
     outfile: 'dist/renderer/agenda/agenda.js',
     sourcemap: isDev,
+    alias,
   });
 
   // 4. Copy static HTML, CSS, assets, and wasm

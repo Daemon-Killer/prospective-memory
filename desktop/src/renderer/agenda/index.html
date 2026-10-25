@@ -15,12 +15,19 @@
           <span class="logo-title">REMY</span>
           <span class="logo-subtitle">AGENDA</span>
         </div>
+        <div class="mode-selector">
+          <button class="mode-btn active" data-mode="all" title="All contexts">ALL</button>
+          <button class="mode-btn" data-mode="work" title="Work context">WORK</button>
+          <button class="mode-btn" data-mode="home" title="Home domestic context">HOME</button>
+        </div>
         <div id="sync-badge" class="sync-badge idle">
           <span class="sync-dot"></span>
           <span id="sync-text">Synced</span>
         </div>
       </div>
       <div class="header-right">
+        <button id="btn-assistant" class="btn-secondary">Personal Assistant</button>
+        <button id="btn-quick-capture" class="btn-primary" title="Quick Capture (Ctrl+Alt+Space or F9)">+ Capture (F9)</button>
         <input
           type="text"
           id="search-input"
@@ -38,14 +45,53 @@
       <button class="tab-btn" data-tab="all">All <span id="count-all" class="count-pill">0</span></button>
     </nav>
 
+    <div id="action-status" role="alert" class="action-status"></div>
     <main class="agenda-content">
+      <!-- Home Recollection Hub (Shown in Home Mode) -->
+      <section id="recollection-hub" class="recollection-hub hidden">
+        <div class="recollection-header">
+          <div class="recollection-title-row">
+            <span class="recollection-glyph">🏠</span>
+            <span class="recollection-title">HOME RECOLLECTION HUB</span>
+            <span class="recollection-badge">Domestic Catch-up</span>
+          </div>
+          <span class="recollection-subtitle">Intentions and errands captured during the workday</span>
+        </div>
+        <div class="recollection-grid">
+          <div class="recollection-col" id="col-calls">
+            <div class="col-header">
+              <span class="col-icon">📞</span>
+              <span class="col-title">Calls & Callbacks</span>
+              <span id="count-calls" class="col-badge">0</span>
+            </div>
+            <div class="col-items" id="items-calls"></div>
+          </div>
+          <div class="recollection-col" id="col-groceries">
+            <div class="col-header">
+              <span class="col-icon">🛒</span>
+              <span class="col-title">Groceries & Errands</span>
+              <span id="count-groceries" class="col-badge">0</span>
+            </div>
+            <div class="col-items" id="items-groceries"></div>
+          </div>
+          <div class="recollection-col" id="col-chores">
+            <div class="col-header">
+              <span class="col-icon">🧹</span>
+              <span class="col-title">Chores & Domestic</span>
+              <span id="count-chores" class="col-badge">0</span>
+            </div>
+            <div class="col-items" id="items-chores"></div>
+          </div>
+        </div>
+      </section>
+
       <div id="reminders-list" class="reminders-list">
         <!-- Rendered dynamically -->
       </div>
       <div id="empty-state" class="empty-state hidden">
         <div class="empty-icon">◆</div>
         <div class="empty-title">All clear</div>
-        <div class="empty-subtitle">Press <kbd>Alt+Shift+Space</kbd> anywhere to quick-capture a reminder</div>
+        <div class="empty-subtitle">Quick-capture a reminder with <kbd id="shortcut-kbd">Ctrl+Alt+R</kbd></div>
       </div>
     </main>
   </div>

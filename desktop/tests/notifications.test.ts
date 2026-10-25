@@ -6,6 +6,7 @@ import { SyncEngine } from '../src/main/syncEngine';
 // Mock electron Notification module
 vi.mock('electron', () => {
   return {
+    app: { getAppPath: () => process.cwd() },
     Notification: class MockNotification {
       static isSupported() {
         return true;
