@@ -3,6 +3,8 @@ import path from 'path';
 
 export class AgendaWindow {
   private window: BrowserWindow | null = null;
+  private focusListeners: Set<() => void> = new Set();
+  private blurListeners: Set<() => void> = new Set();
 
   constructor() {
     this.createWindow();
@@ -27,6 +29,22 @@ export class AgendaWindow {
 
     this.window.loadFile(path.join(__dirname, '../renderer/agenda/index.html'));
 
+    this.window.on('focus', () => {
+      this.focusListeners.forEach((fn) => {
+        try {
+          fn();
+        } catch (_) {}
+      });
+    });
+
+    this.window.on('blur', () => {
+      this.blurListeners.forEach((fn) => {
+        try {
+          fn();
+        } catch (_) {}
+      });
+    });
+
     // Prevent quit on close, hide to tray instead
     this.window.on('close', (event) => {
       if (!(this.window as any)?.__isQuitting) {
@@ -45,8 +63,12 @@ export class AgendaWindow {
       this.createWindow();
     }
     if (this.window) {
+      if (this.window.isMinimized()) {
+        this.window.restore();
+      }
       this.window.show();
       this.window.focus();
+      this.window.moveTop();
     }
   }
 
@@ -74,6 +96,22 @@ export class AgendaWindow {
     if (this.window && this.window.webContents) {
       this.window.webContents.send('agenda:syncStatus', { status, lastSync });
     }
+  }
+
+  public notifyModeChanged(mode: string): void {
+    if (this.window && this.window.webContents) {
+      this.window.webContents.send('agenda:modeChanged', mode);
+    }
+  }
+
+  public onFocus(fn: () => void): () => void {
+    this.focusListeners.add(fn);
+    return () => this.focusListeners.delete(fn);
+  }
+
+  public onBlur(fn: () => void): () => void {
+    this.blurListeners.add(fn);
+    return () => this.blurListeners.delete(fn);
   }
 
   public prepareToQuit(): void {

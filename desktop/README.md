@@ -6,7 +6,7 @@ Runs silently in the Windows system tray and summons an ultra-fast (<150ms) Swis
 ## Key Capabilities
 
 1. **System-Wide Global Hotkey & Spotlight HUD**:
-   - Shortcut: `Alt+Shift+Space` (with automatic fallback to `Ctrl+Shift+Space` / `Alt+Space`).
+   - Shortcut: `Ctrl+Alt+R` on Windows (`Cmd+Shift+R` on macOS). If unavailable, Remy registers one fallback and shows the active shortcut in the tray and Agenda. `Ctrl+Shift+K` is no longer registered.
    - Floating, centered Swiss Void (`#000000`) quick-capture HUD over any active window (VS Code, browser, games, PDF).
    - Typing thoughts (`call accountant 5pm`, `dahi 15m`) and pressing Enter compiles the prospective memory card, commits it to local SQLite, and hides immediately.
    - Live compiler preview with preset chip badges (`[+15m]`, `[+1h]`, `[Tomorrow]`), music intent chips (`🎵 play spb songs hindi`), and lingo expansion.
@@ -16,7 +16,7 @@ Runs silently in the Windows system tray and summons an ultra-fast (<150ms) Swis
    - Starts silently on launch without popping up heavy windows.
    - Right-click tray menu:
      - `Open Agenda`
-     - `Quick Capture` (`Alt+Shift+Space`)
+     - `Quick Capture` (shows the active shortcut)
      - `Sync Now`
      - `Quit Remy`
    - Clicking or double-clicking the tray icon toggles the Agenda window.

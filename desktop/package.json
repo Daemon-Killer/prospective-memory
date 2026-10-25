@@ -1,6 +1,6 @@
 {
   "name": "remy-desktop",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Remy Reminders - Lightweight Swiss Void Desktop Companion",
   "main": "dist/main/index.js",
   "scripts": {
@@ -9,7 +9,9 @@
     "start": "electron .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "package:win": "npm run build && electron-builder --win portable --x64 --publish never",
+    "package:mac": "npm run build && electron-builder --mac zip --x64 --arm64 --publish never"
   },
   "keywords": [
     "prospective-memory",
@@ -26,9 +28,32 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/sql.js": "^1.4.9",
-    "electron": "^34.2.0",
-    "esbuild": "^0.25.0",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
     "typescript": "^5.7.3",
-    "vitest": "^3.0.0"
+    "vitest": "^5.0.5"
+  },
+  "build": {
+    "appId": "com.remy.desktop",
+    "productName": "Remy",
+    "directories": {
+      "output": "releases"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": "portable",
+      "artifactName": "Remy-${version}-Windows-${arch}.${ext}"
+    },
+    "mac": {
+      "target": "zip",
+      "category": "public.app-category.productivity",
+      "artifactName": "Remy-${version}-Mac-${arch}.${ext}"
+    }
   }
 }

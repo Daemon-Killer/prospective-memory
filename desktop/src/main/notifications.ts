@@ -1,4 +1,6 @@
-import { Notification } from 'electron';
+import { app, Notification } from 'electron';
+import fs from 'fs';
+import path from 'path';
 import { LocalLedger } from './ledger';
 import { SyncEngine } from './syncEngine';
 import { Reminder } from '../types';
@@ -53,11 +55,26 @@ export class NotificationService {
       return;
     }
 
+    const iconCandidates = [
+      path.join(__dirname, '../assets/icon-128.png'),
+      path.join(__dirname, '../../assets/icon-128.png'),
+    ];
+    try {
+      if (app && typeof app.getAppPath === 'function') {
+        iconCandidates.push(
+          path.join(app.getAppPath(), 'dist/assets/icon-128.png'),
+          path.join(app.getAppPath(), 'assets/icon-128.png')
+        );
+      }
+    } catch (_) {}
+    const iconPath = iconCandidates.find((p) => fs.existsSync(p));
+
     const notif = new Notification({
       title: 'Remy Reminder',
       body: rem.title + (rem.notes ? `\n${rem.notes}` : ''),
       silent: false,
       urgency: 'critical',
+      icon: iconPath,
       actions: [
         { type: 'button', text: '+15m Snooze' },
         { type: 'button', text: 'Complete' },
@@ -86,13 +103,13 @@ export class NotificationService {
     target.setSeconds(0, 0);
     this.ledger.snoozeReminder(id, target.toISOString());
     this.notifiedDueDates.delete(id); // Allow re-notification when due again
-    this.syncEngine.triggerDebounced();
+    this.syncEngine.triggerBurstSync();
   }
 
   public completeReminder(id: string): void {
     this.ledger.completeReminder(id);
     this.notifiedDueDates.delete(id);
-    this.syncEngine.triggerDebounced();
+    this.syncEngine.triggerBurstSync();
   }
 
   public clearNotified(id: string): void {

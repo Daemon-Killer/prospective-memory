@@ -1,4 +1,4 @@
-import { app, ipcMain } from 'electron';
+import { app, ipcMain, globalShortcut, shell } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { LocalLedger } from './ledger';
@@ -9,6 +9,10 @@ import { SpotlightWindow } from './spotlightWindow';
 import { AgendaWindow } from './agendaWindow';
 import { AppTray } from './tray';
 import { compileToReminder, compileCaptureWithIntent } from './compiler';
+import { getRecollectionItems } from './homeRecollection';
+import { getCallTarget } from '@core/callTarget';
+import { ContextMode } from '../types';
+import { createPersonalAssistant } from './personalAssistant';
 import {
   calculate15Minutes,
   calculate1Hour,
@@ -39,6 +43,7 @@ let hotkeyManager: HotkeyManager;
 let spotlightWindow: SpotlightWindow;
 let agendaWindow: AgendaWindow;
 let appTray: AppTray;
+let currentMode: ContextMode = 'all';
 
 function resolveDbPath(): string {
   if (process.env.PMEM_DB_PATH) {
@@ -54,10 +59,69 @@ function resolveDbPath(): string {
   return path.join(app.getPath('userData'), 'tasks.db');
 }
 
+function refreshTray(): void {
+  if (!appTray || !ledger) return;
+
+  const allActive = ledger
+    .listReminders({ includeDeleted: false })
+    .filter((r) => r.status !== 'completed');
+
+  // Filter for active count based on currentMode
+  const modeActive = allActive.filter((r) => {
+    if (currentMode === 'all') return true;
+    if (currentMode === 'work') {
+      return r.context === 'work' || r.tags?.some((t) => ['work', 'office', 'job'].includes(t.toLowerCase()));
+    }
+    if (currentMode === 'home') {
+      return r.context !== 'work' && !r.tags?.some((t) => ['work', 'office', 'job'].includes(t.toLowerCase()));
+    }
+    return true;
+  });
+
+  // Upcoming due item
+  const sortedUpcoming = [...modeActive]
+    .filter((r) => r.armed !== false)
+    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
+  const nextDue = sortedUpcoming[0] || null;
+
+  const syncStatus = syncEngine ? syncEngine.getStatus() : 'idle';
+  const syncStatusText =
+    syncStatus === 'syncing'
+      ? 'Syncing...'
+      : syncStatus === 'synced'
+      ? 'Sync Now (Synced)'
+      : syncStatus === 'error'
+      ? 'Sync Now (Error)'
+      : 'Sync Now';
+
+  appTray.updateState({
+    activeCount: modeActive.length,
+    nextDueReminder: nextDue,
+    currentMode,
+    syncStatusText,
+    shortcut: hotkeyManager ? hotkeyManager.getDisplayShortcut() : 'None',
+  });
+}
+
+function handleSetMode(mode: ContextMode): void {
+  currentMode = mode;
+  if (ledger) {
+    ledger.setSetting('active_mode', mode);
+  }
+  if (agendaWindow) {
+    agendaWindow.notifyModeChanged(mode);
+    agendaWindow.notifyDataChanged();
+  }
+  refreshTray();
+}
+
 async function bootstrap() {
   const dbPath = resolveDbPath();
   ledger = new LocalLedger(dbPath);
   await ledger.init();
+
+  currentMode = (ledger.getSetting('active_mode', 'all') as ContextMode) || 'all';
 
   syncEngine = new SyncEngine(ledger);
   syncEngine.startAutoSync(30000);
@@ -67,6 +131,16 @@ async function bootstrap() {
 
   ledger.onChange(() => {
     agendaWindow.notifyDataChanged();
+    refreshTray();
+  });
+
+  agendaWindow.onFocus(() => {
+    syncEngine.setActive(true);
+    syncEngine.syncNow().catch(() => {});
+  });
+
+  agendaWindow.onBlur(() => {
+    syncEngine.setActive(false);
   });
 
   notificationService = new NotificationService(ledger, syncEngine, () => {
@@ -77,8 +151,20 @@ async function bootstrap() {
   hotkeyManager = new HotkeyManager(() => {
     spotlightWindow.toggle();
   });
-  const registered = hotkeyManager.register('Alt+Shift+Space');
+  const registered = hotkeyManager.register();
   console.log(`Global hotkey registered: ${registered || 'none'}`);
+
+  // Register global hotkey for Agenda as well (Alt+Shift+A / Win+Shift+A / Ctrl+Shift+A)
+  try {
+    const agendaCandidates = ['Alt+Shift+A', 'CommandOrControl+Shift+A', 'Super+Shift+A'];
+    for (const hk of agendaCandidates) {
+      try {
+        globalShortcut.register(hk, () => {
+          agendaWindow.toggle();
+        });
+      } catch (_) {}
+    }
+  } catch (_) {}
 
   appTray = new AppTray({
     onOpenAgenda: () => agendaWindow.show(),
@@ -88,7 +174,9 @@ async function bootstrap() {
       const res = await syncEngine.syncNow();
       appTray.updateContextMenu(res.success ? 'Sync Now (Synced)' : 'Sync Now (Error)');
       agendaWindow.notifyDataChanged();
+      refreshTray();
     },
+    onSetMode: (mode) => handleSetMode(mode),
     onQuit: () => {
       agendaWindow.prepareToQuit();
       app.quit();
@@ -97,22 +185,43 @@ async function bootstrap() {
 
   syncEngine.onStatusChange((status, lastSync) => {
     agendaWindow.notifySyncStatus(status, lastSync);
+    refreshTray();
   });
 
   setupIpc();
+  refreshTray();
+
+  // Show Agenda window on launch so user gets immediate visual UI
+  agendaWindow.show();
 
   // Initial sync in background
   setTimeout(() => {
-    syncEngine.syncNow().then(() => {
-      agendaWindow.notifyDataChanged();
-    }).catch(() => {});
+    syncEngine
+      .syncNow()
+      .then(() => {
+        agendaWindow.notifyDataChanged();
+        refreshTray();
+      })
+      .catch(() => {});
   }, 1000);
 }
 
 function setupIpc() {
+  let assistant: ReturnType<typeof createPersonalAssistant> | undefined;
+  const getAssistant = (event: Electron.IpcMainInvokeEvent) => {
+    if (event.senderFrame !== event.sender.mainFrame || !event.senderFrame?.url.startsWith('file:') || !event.senderFrame.url.endsWith('/renderer/agenda/index.html')) throw new Error('Assistant access is limited to the Remy agenda.');
+    return assistant ??= createPersonalAssistant(app.getPath('userData'));
+  };
+  ipcMain.handle('assistant:config', event => getAssistant(event).config());
+  ipcMain.handle('assistant:connect', (event, link: string) => getAssistant(event).connect(link));
+  ipcMain.handle('assistant:forget', event => getAssistant(event).forget());
+  ipcMain.handle('assistant:request', (event, method: string, route: string, body?: string) => getAssistant(event).request(method, route, body));
+
+  ipcMain.handle('spotlight:getShortcut', () => hotkeyManager.getDisplayShortcut());
+
   ipcMain.handle('spotlight:compile', (_event, text: string) => {
     if (!text || !text.trim()) return null;
-    const draft = compileCaptureWithIntent(text);
+    const draft = compileCaptureWithIntent(text, 'inbox', new Date(), undefined, currentMode);
     return {
       raw: draft.raw,
       title: draft.title,
@@ -120,17 +229,20 @@ function setupIpc() {
       preset: draft.preset,
       dueDate: draft.dueDate.toISOString(),
       armed: draft.armed,
+      context: draft.context,
+      tags: draft.tags,
       musicDraft: draft.musicDraft,
     };
   });
 
   ipcMain.handle('spotlight:submit', async (_event, text: string) => {
     if (!text || !text.trim()) return null;
-    const { reminder, draft } = compileToReminder(text);
+    const { reminder, draft } = compileToReminder(text, currentMode);
     const saved = ledger.upsertReminder(reminder);
     spotlightWindow.hide();
     agendaWindow.notifyDataChanged();
-    syncEngine.triggerDebounced();
+    refreshTray();
+    syncEngine.triggerBurstSync();
     return { reminder: saved, draft };
   });
 
@@ -138,8 +250,35 @@ function setupIpc() {
     spotlightWindow.hide();
   });
 
-  ipcMain.handle('agenda:list', (_event, status?: string) => {
-    return ledger.listReminders({ status: status || undefined, includeDeleted: false });
+  ipcMain.handle('spotlight:show', () => {
+    spotlightWindow.show();
+  });
+
+  ipcMain.handle('agenda:list', (_event, status?: string, context?: string) => {
+    const filterContext = context || (currentMode !== 'all' ? currentMode : undefined);
+    return ledger.listReminders({ status: status || undefined, context: filterContext, includeDeleted: false });
+  });
+
+  ipcMain.handle('mode:get', () => {
+    return currentMode;
+  });
+
+  ipcMain.handle('mode:set', (_event, mode: ContextMode) => {
+    handleSetMode(mode);
+    return currentMode;
+  });
+
+  ipcMain.handle('recollection:list', () => {
+    const active = ledger.listReminders({ includeDeleted: false });
+    return getRecollectionItems(active);
+  });
+
+  ipcMain.handle('agenda:call', async (_event, id: string) => {
+    const reminder = ledger.getReminder(id);
+    const target = reminder && !reminder.isDeleted ? getCallTarget(reminder) : null;
+    if (!target) throw new Error('This reminder has no call action');
+    await shell.openExternal('tel:' + (target.phone || ''));
+    return true;
   });
 
   ipcMain.handle('agenda:snooze', (_event, id: string, preset: string) => {
@@ -173,7 +312,8 @@ function setupIpc() {
     const updated = ledger.snoozeReminder(id, target.toISOString());
     notificationService.clearNotified(id);
     agendaWindow.notifyDataChanged();
-    syncEngine.triggerDebounced();
+    refreshTray();
+    syncEngine.triggerBurstSync();
     return updated;
   });
 
@@ -181,7 +321,8 @@ function setupIpc() {
     const updated = ledger.completeReminder(id);
     notificationService.clearNotified(id);
     agendaWindow.notifyDataChanged();
-    syncEngine.triggerDebounced();
+    refreshTray();
+    syncEngine.triggerBurstSync();
     return updated;
   });
 
@@ -189,13 +330,15 @@ function setupIpc() {
     const res = ledger.deleteReminder(id);
     notificationService.clearNotified(id);
     agendaWindow.notifyDataChanged();
-    syncEngine.triggerDebounced();
+    refreshTray();
+    syncEngine.triggerBurstSync();
     return res;
   });
 
   ipcMain.handle('agenda:sync', async () => {
     const res = await syncEngine.syncNow();
     agendaWindow.notifyDataChanged();
+    refreshTray();
     return res;
   });
 

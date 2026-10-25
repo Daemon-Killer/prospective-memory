@@ -74,6 +74,7 @@ async function build() {
     target: 'es2022',
     outfile: 'dist/renderer/agenda/agenda.js',
     sourcemap: isDev,
+    alias,
   });
 
   // 4. Copy static HTML, CSS, assets, and wasm

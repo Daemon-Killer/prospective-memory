@@ -49,10 +49,16 @@ CREATE TABLE IF NOT EXISTS reminders (
     armed INTEGER NOT NULL DEFAULT 1,
     ink_data TEXT,
     cultural_metadata TEXT,
-    priority TEXT
+    priority TEXT,
+    context TEXT DEFAULT 'all',
+    tags TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status, due_date ASC);
 CREATE INDEX IF NOT EXISTS idx_reminders_updated ON reminders(updated_at DESC);
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 `;
 
 export class LocalLedger {
@@ -61,6 +67,7 @@ export class LocalLedger {
   private isMemory: boolean;
   private SQL: any = null;
   private lastLoadedMtime: number = 0;
+  private lastLoadedSize: number = 0;
   private watcher: fs.FSWatcher | null = null;
   private watchDebounceTimer: NodeJS.Timeout | null = null;
   private changeListeners: Set<() => void> = new Set();
@@ -93,7 +100,9 @@ export class LocalLedger {
         const fileBuffer = fs.readFileSync(this.dbPath);
         this.db = new this.SQL.Database(fileBuffer);
         try {
-          this.lastLoadedMtime = fs.statSync(this.dbPath).mtimeMs;
+          const stat = fs.statSync(this.dbPath);
+          this.lastLoadedMtime = stat.mtimeMs;
+          this.lastLoadedSize = stat.size;
         } catch (_) {}
       } else {
         this.db = new this.SQL.Database();
@@ -103,17 +112,28 @@ export class LocalLedger {
     }
     if (this.db) {
       this.db.run(SQLITE_SCHEMA);
+      try {
+        this.db.run("ALTER TABLE reminders ADD COLUMN context TEXT DEFAULT 'all'");
+      } catch (_) {}
+      try {
+        this.db.run("ALTER TABLE reminders ADD COLUMN tags TEXT");
+      } catch (_) {}
       this.persist();
     }
   }
 
-  public reloadIfModified(): boolean {
+  public reloadIfModified(force: boolean = false): boolean {
     if (this.isMemory || !this.SQL || !fs.existsSync(this.dbPath)) {
       return false;
     }
     try {
       const stat = fs.statSync(this.dbPath);
-      if (stat.mtimeMs > this.lastLoadedMtime) {
+      const isModified =
+        force ||
+        stat.mtimeMs > this.lastLoadedMtime ||
+        (stat.mtimeMs >= this.lastLoadedMtime && this.lastLoadedSize > 0 && stat.size !== this.lastLoadedSize);
+
+      if (isModified) {
         const fileBuffer = fs.readFileSync(this.dbPath);
         if (this.db) {
           try {
@@ -122,6 +142,7 @@ export class LocalLedger {
         }
         this.db = new this.SQL.Database(fileBuffer);
         this.lastLoadedMtime = stat.mtimeMs;
+        this.lastLoadedSize = stat.size;
         this.emitChange();
         return true;
       }
@@ -166,11 +187,21 @@ export class LocalLedger {
     const buffer = Buffer.from(data);
     fs.writeFileSync(this.dbPath, buffer);
     try {
-      this.lastLoadedMtime = fs.statSync(this.dbPath).mtimeMs;
+      const stat = fs.statSync(this.dbPath);
+      this.lastLoadedMtime = stat.mtimeMs;
+      this.lastLoadedSize = stat.size;
     } catch (_) {}
   }
 
   private mapRowToReminder(row: any[]): Reminder {
+    let tags: string[] | null = null;
+    if (row[16]) {
+      try {
+        tags = JSON.parse(String(row[16]));
+      } catch {
+        tags = String(row[16]).split(',').map((s) => s.trim()).filter(Boolean);
+      }
+    }
     return {
       id: String(row[0]),
       title: String(row[1]),
@@ -187,15 +218,17 @@ export class LocalLedger {
       inkData: row[12] ? String(row[12]) : null,
       culturalMetadata: row[13] ? String(row[13]) : null,
       priority: row[14] ? String(row[14]) : null,
+      context: (row[15] ? String(row[15]) : 'all') as any,
+      tags,
     };
   }
 
-  public listReminders(options: { status?: string; includeDeleted?: boolean } = {}): Reminder[] {
+  public listReminders(options: { status?: string; context?: string; includeDeleted?: boolean } = {}): Reminder[] {
     this.reloadIfModified();
     if (!this.db) throw new Error('Database not initialized');
-    const { status, includeDeleted = false } = options;
+    const { status, context, includeDeleted = false } = options;
 
-    let sql = 'SELECT id, title, notes, due_date, status, snooze_count, last_snoozed_at, created_at, updated_at, completed_at, is_deleted, armed, ink_data, cultural_metadata, priority FROM reminders';
+    let sql = 'SELECT id, title, notes, due_date, status, snooze_count, last_snoozed_at, created_at, updated_at, completed_at, is_deleted, armed, ink_data, cultural_metadata, priority, context, tags FROM reminders';
     const conditions: string[] = [];
     const params: any[] = [];
 
@@ -215,11 +248,38 @@ export class LocalLedger {
     if (params.length > 0) {
       stmt.bind(params);
     }
-    const results: Reminder[] = [];
+    let results: Reminder[] = [];
     while (stmt.step()) {
       results.push(this.mapRowToReminder(stmt.get()));
     }
     stmt.free();
+
+    if (context && context !== 'all') {
+      const mode = context.toLowerCase();
+      if (mode === 'work') {
+        results = results.filter(
+          (r) =>
+            r.context === 'work' ||
+            r.tags?.some((t) => ['work', 'office', 'job'].includes(t.toLowerCase()))
+        );
+      } else if (mode === 'home') {
+        results = results.filter(
+          (r) =>
+            r.context === 'home' ||
+            r.context === 'personal' ||
+            r.tags?.some((t) =>
+              ['home', 'personal', 'chore', 'chores', 'grocery', 'groceries', 'errand', 'errands'].includes(
+                t.toLowerCase()
+              )
+            ) ||
+            (r.context !== 'work' &&
+              !r.tags?.some((t) => ['work', 'office', 'job'].includes(t.toLowerCase())))
+        );
+      } else {
+        results = results.filter((r) => r.context === mode);
+      }
+    }
+
     return results;
   }
 
@@ -227,7 +287,7 @@ export class LocalLedger {
     this.reloadIfModified();
     if (!this.db) throw new Error('Database not initialized');
     const stmt = this.db.prepare(
-      'SELECT id, title, notes, due_date, status, snooze_count, last_snoozed_at, created_at, updated_at, completed_at, is_deleted, armed, ink_data, cultural_metadata, priority FROM reminders WHERE id = ?'
+      'SELECT id, title, notes, due_date, status, snooze_count, last_snoozed_at, created_at, updated_at, completed_at, is_deleted, armed, ink_data, cultural_metadata, priority, context, tags FROM reminders WHERE id = ?'
     );
     stmt.bind([id]);
     let result: Reminder | null = null;
@@ -260,8 +320,8 @@ export class LocalLedger {
       INSERT INTO reminders (
         id, title, notes, due_date, status, snooze_count, last_snoozed_at,
         created_at, updated_at, completed_at, is_deleted, armed,
-        ink_data, cultural_metadata, priority
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ink_data, cultural_metadata, priority, context, tags
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         notes = excluded.notes,
@@ -275,7 +335,9 @@ export class LocalLedger {
         armed = excluded.armed,
         ink_data = excluded.ink_data,
         cultural_metadata = excluded.cultural_metadata,
-        priority = excluded.priority
+        priority = excluded.priority,
+        context = excluded.context,
+        tags = excluded.tags
     `;
 
     this.db.run(upsertSql, [
@@ -294,6 +356,8 @@ export class LocalLedger {
       rem.inkData ?? null,
       rem.culturalMetadata ?? null,
       rem.priority ?? null,
+      rem.context ?? 'all',
+      rem.tags ? JSON.stringify(rem.tags) : null,
     ]);
 
     // Mirror to tasks table
@@ -301,6 +365,37 @@ export class LocalLedger {
     this.persist();
 
     return this.getReminder(rem.id)!;
+  }
+
+  public getSetting(key: string, defaultValue: string = ''): string {
+    this.reloadIfModified();
+    if (!this.db) return defaultValue;
+    try {
+      const stmt = this.db.prepare('SELECT value FROM app_settings WHERE key = ?');
+      stmt.bind([key]);
+      let res = defaultValue;
+      if (stmt.step()) {
+        res = String(stmt.get()[0]);
+      }
+      stmt.free();
+      return res;
+    } catch {
+      return defaultValue;
+    }
+  }
+
+  public setSetting(key: string, value: string): void {
+    this.reloadIfModified();
+    if (!this.db) return;
+    try {
+      this.db.run(
+        'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+        [key, value]
+      );
+      this.persist();
+    } catch (e) {
+      console.warn('LocalLedger: setSetting error', e);
+    }
   }
 
   public batchUpsert(rems: Reminder[]): Reminder[] {

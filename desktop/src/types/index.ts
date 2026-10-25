@@ -8,6 +8,20 @@ export type SnoozePreset =
   | 'weekend'
   | 'custom';
 
+export type ContextMode = 'all' | 'work' | 'home';
+
+export type RecollectionCategory = 'call' | 'grocery' | 'chore' | 'general';
+
+export interface RecollectionItem {
+  id: string;
+  title: string;
+  category: RecollectionCategory;
+  dueDate: string;
+  notes?: string | null;
+  tags?: string[] | null;
+  reminder: Reminder;
+}
+
 export interface Reminder {
   id: string;
   title: string;
@@ -24,6 +38,8 @@ export interface Reminder {
   inkData?: string | null;
   culturalMetadata?: string | null;
   priority?: string | null;
+  context?: ContextMode | 'personal' | 'general' | null;
+  tags?: string[] | null;
 }
 
 export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error';

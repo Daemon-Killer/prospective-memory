@@ -1,4 +1,7 @@
+import { getCallTarget } from '@core/callTarget';
+import { initPersonalAssistant } from './assistant';
 declare const remyAPI: any;
+initPersonalAssistant(remyAPI);
 
 interface Reminder {
   id: string;
@@ -12,10 +15,23 @@ interface Reminder {
   updatedAt: string;
   completedAt?: string | null;
   armed?: boolean;
+  context?: 'work' | 'home' | 'all';
+  tags?: string[] | null;
+}
+
+interface RecollectionItem {
+  id: string;
+  title: string;
+  category: 'call' | 'grocery' | 'chore' | 'general';
+  dueDate: string;
+  notes?: string | null;
+  tags?: string[] | null;
+  reminder: Reminder;
 }
 
 let allReminders: Reminder[] = [];
 let currentTab: 'pending' | 'snoozed' | 'completed' | 'all' = 'pending';
+let currentMode: 'all' | 'work' | 'home' = 'all';
 let searchQuery: string = '';
 
 const listContainer = document.getElementById('reminders-list') as HTMLElement;
@@ -30,7 +46,28 @@ const countSnoozed = document.getElementById('count-snoozed') as HTMLElement;
 const countCompleted = document.getElementById('count-completed') as HTMLElement;
 const countAll = document.getElementById('count-all') as HTMLElement;
 
+const recollectionHub = document.getElementById('recollection-hub') as HTMLElement;
+const itemsCalls = document.getElementById('items-calls') as HTMLElement;
+const itemsGroceries = document.getElementById('items-groceries') as HTMLElement;
+const itemsChores = document.getElementById('items-chores') as HTMLElement;
+const countCalls = document.getElementById('count-calls') as HTMLElement;
+const countGroceries = document.getElementById('count-groceries') as HTMLElement;
+const countChores = document.getElementById('count-chores') as HTMLElement;
+
 const tabButtons = document.querySelectorAll('.tab-btn');
+const modeButtons = document.querySelectorAll('.mode-btn');
+const shortcutKbd = document.getElementById('shortcut-kbd');
+
+// Show the shortcut actually registered, including any collision fallback.
+if (shortcutKbd) {
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/i.test(navigator.platform);
+  shortcutKbd.textContent = isMac ? 'Cmd+Shift+R' : 'Ctrl+Alt+R';
+  if (typeof remyAPI !== 'undefined' && remyAPI.getCaptureShortcut) {
+    remyAPI.getCaptureShortcut().then((shortcut: string) => {
+      shortcutKbd.textContent = shortcut === 'None' ? 'Quick Capture in the tray menu' : shortcut;
+    }).catch(() => {});
+  }
+}
 
 function formatRelativeTime(dateString: string): { text: string; className: string } {
   const target = new Date(dateString).getTime();
@@ -75,6 +112,61 @@ function updateCounts() {
   countAll.textContent = String(allReminders.length);
 }
 
+async function renderRecollectionHub() {
+  if (currentMode !== 'home') {
+    recollectionHub.classList.add('hidden');
+    return;
+  }
+
+  try {
+    const items: RecollectionItem[] = await remyAPI.getRecollectionItems();
+    recollectionHub.classList.remove('hidden');
+
+    const calls = items.filter((i) => i.category === 'call');
+    const groceries = items.filter((i) => i.category === 'grocery');
+    const chores = items.filter((i) => i.category === 'chore' || i.category === 'general');
+
+    countCalls.textContent = String(calls.length);
+    countGroceries.textContent = String(groceries.length);
+    countChores.textContent = String(chores.length);
+
+    renderColItems(itemsCalls, calls);
+    renderColItems(itemsGroceries, groceries);
+    renderColItems(itemsChores, chores);
+  } catch (e) {
+    console.error('Failed to load recollection items', e);
+  }
+}
+
+function renderColItems(container: HTMLElement, items: RecollectionItem[]) {
+  container.innerHTML = '';
+  if (items.length === 0) {
+    container.innerHTML = '<div style="color: #52525b; font-size: 11px; padding: 4px 0;">None pending</div>';
+    return;
+  }
+
+  items.forEach((item) => {
+    const card = document.createElement('div');
+    card.className = 'recollection-card';
+    card.innerHTML = `
+      <div class="recollection-card-title">${escapeHtml(item.title)}</div>
+      ${item.notes ? `<div class="recollection-card-notes">${escapeHtml(item.notes)}</div>` : ''}
+      <div class="recollection-card-actions">
+        ${callButton(item.reminder)}
+        <button class="action-btn snooze-btn" data-id="${item.id}" data-preset="15m" style="padding: 2px 6px; font-size: 10px;">+15m</button>
+        <button class="action-btn complete" data-id="${item.id}" style="padding: 2px 6px; font-size: 10px;">✓ Done</button>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function callButton(reminder: Reminder): string {
+  const target = getCallTarget(reminder);
+  if (!target || reminder.status === "completed") return "";
+  return '<button class="action-btn call-btn" data-id="' + escapeHtml(reminder.id) + '" title="Open your calling app">' + escapeHtml(target.phone ? "Call " + target.name : "Open dialer") + '</button>';
+}
+
 function renderReminders() {
   updateCounts();
 
@@ -108,6 +200,10 @@ function renderReminders() {
     const displayTime = isUnarmed ? 'Inbox' : relTime;
     const displayClass = isUnarmed ? 'meta-due' : relClass;
 
+    const contextTag = reminder.context && reminder.context !== 'all'
+      ? `<span class="meta-badge" style="text-transform: uppercase;">${escapeHtml(reminder.context)}</span>`
+      : '';
+
     card.innerHTML = `
       <div class="card-main">
         <div class="card-title">${escapeHtml(reminder.title)}</div>
@@ -115,9 +211,11 @@ function renderReminders() {
         <div class="card-meta">
           <span class="${displayClass}">${displayTime}</span>
           ${reminder.snoozeCount > 0 ? `<span class="meta-badge">Snoozed ${reminder.snoozeCount}x</span>` : ''}
+          ${contextTag}
         </div>
       </div>
       <div class="card-actions">
+        ${callButton(reminder)}
         ${
           reminder.status !== 'completed'
             ? `
@@ -137,32 +235,26 @@ function renderReminders() {
     listContainer.appendChild(card);
   });
 
-  // Attach event listeners
-  document.querySelectorAll('.snooze-btn').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      const id = (e.currentTarget as HTMLElement).dataset.id!;
-      const preset = (e.currentTarget as HTMLElement).dataset.preset!;
-      await remyAPI.snoozeReminder(id, preset);
-      await loadReminders();
-    });
-  });
-
-  document.querySelectorAll('.action-btn.complete').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      const id = (e.currentTarget as HTMLElement).dataset.id!;
-      await remyAPI.completeReminder(id);
-      await loadReminders();
-    });
-  });
-
-  document.querySelectorAll('.action-btn.delete').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      const id = (e.currentTarget as HTMLElement).dataset.id!;
-      await remyAPI.deleteReminder(id);
-      await loadReminders();
-    });
-  });
 }
+
+// Delegate once so refreshed agenda and recollection cards share the same actions.
+document.addEventListener("click", async (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".action-btn");
+  if (!button || button.disabled || !button.dataset.id) return;
+  const id = button.dataset.id;
+  const status = document.getElementById("action-status");
+  button.disabled = true;
+  try {
+    if (button.classList.contains("call-btn")) await remyAPI.callReminder(id);
+    else if (button.classList.contains("snooze-btn")) await remyAPI.snoozeReminder(id, button.dataset.preset);
+    else if (button.classList.contains("complete")) await remyAPI.completeReminder(id);
+    else if (button.classList.contains("delete")) await remyAPI.deleteReminder(id);
+    if (status) status.textContent = "";
+    if (!button.classList.contains("call-btn")) await loadReminders();
+  } catch {
+    if (status) status.textContent = button.classList.contains("call-btn") ? "Could not open a calling app. Check your default phone app." : "Could not save this change. Please try again.";
+  } finally { button.disabled = false; }
+});
 
 function escapeHtml(str: string): string {
   return str
@@ -175,12 +267,38 @@ function escapeHtml(str: string): string {
 
 async function loadReminders() {
   try {
-    allReminders = await remyAPI.listReminders();
+    allReminders = await remyAPI.listReminders(undefined, currentMode !== 'all' ? currentMode : undefined);
     renderReminders();
+    await renderRecollectionHub();
   } catch (e) {
     console.error('Failed to load reminders', e);
   }
 }
+
+function updateModeButtons() {
+  modeButtons.forEach((btn) => {
+    const mode = (btn as HTMLElement).dataset.mode;
+    if (mode === currentMode) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+}
+
+// Mode button click listeners
+modeButtons.forEach((btn) => {
+  btn.addEventListener('click', async (e) => {
+    const target = e.currentTarget as HTMLElement;
+    const mode = target.dataset.mode as any;
+    currentMode = mode;
+    updateModeButtons();
+    if (typeof remyAPI !== 'undefined' && remyAPI.setMode) {
+      await remyAPI.setMode(mode);
+    }
+    await loadReminders();
+  });
+});
 
 // Tab click listeners
 tabButtons.forEach((btn) => {
@@ -198,6 +316,16 @@ searchInput.addEventListener('input', () => {
   searchQuery = searchInput.value;
   renderReminders();
 });
+
+// Quick Capture button
+const btnQuickCapture = document.getElementById('btn-quick-capture') as HTMLButtonElement | null;
+if (btnQuickCapture) {
+  btnQuickCapture.addEventListener('click', async () => {
+    if (typeof remyAPI !== 'undefined' && remyAPI.openSpotlight) {
+      await remyAPI.openSpotlight();
+    }
+  });
+}
 
 // Sync Now button
 btnSync.addEventListener('click', async () => {
@@ -223,6 +351,14 @@ if (typeof remyAPI !== 'undefined') {
     loadReminders();
   });
 
+  if (remyAPI.onModeChange) {
+    remyAPI.onModeChange((mode: any) => {
+      currentMode = mode;
+      updateModeButtons();
+      loadReminders();
+    });
+  }
+
   remyAPI.onSyncStatusChange((data: { status: string; lastSync: string | null }) => {
     syncBadge.className = `sync-badge ${data.status}`;
     if (data.status === 'synced') {
@@ -236,14 +372,26 @@ if (typeof remyAPI !== 'undefined') {
     }
   });
 
-  // Initial status check
+  // Initial mode check
+  if (remyAPI.getMode) {
+    remyAPI.getMode().then((mode: any) => {
+      if (mode) {
+        currentMode = mode;
+        updateModeButtons();
+      }
+      loadReminders();
+    });
+  } else {
+    loadReminders();
+  }
+
+  // Initial sync status check
   remyAPI.getSyncStatus().then((data: any) => {
     if (data) {
       syncBadge.className = `sync-badge ${data.status}`;
       syncText.textContent = data.status === 'synced' ? 'Synced' : data.status;
     }
   });
+} else {
+  loadReminders();
 }
-
-// Initial load
-loadReminders();
