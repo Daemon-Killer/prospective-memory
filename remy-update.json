@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "packageName": "com.remy.reminders",
-  "versionCode": 10,
-  "versionName": "1.0.9",
+  "versionCode": 11,
+  "versionName": "1.0.10",
   "apkUrl": "https://drive.google.com/uc?export=download&id=17XvYljBwXW31q7T_c2T0Jmr7zrNs4YTt&confirm=t",
-  "sizeBytes": 53657166,
-  "sha256": "daba6a3cd3fe0c515d3264daf62c9b55e0c3e24352d5f7732c8a55321211b76f",
-  "notes": "Meal planning with a local pantry, editable recipes, seven-day dish rotation, confirmed cooking and one combined restock reminder. Log leftovers without deducting ingredients twice."
+  "sizeBytes": 53677566,
+  "sha256": "292a185e9ba8df51577531984851adc2d15a83b581561ee0386256225c32813a",
+  "notes": "One-tap notification cleanup with verified Google Messages promotional SMS read cleanup, including Android 15 hidden-preview support through SMS permission. Useful messages and mixed conversations stay unread."
 }
