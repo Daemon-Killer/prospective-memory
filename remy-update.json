@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "packageName": "com.remy.reminders",
-  "versionCode": 11,
-  "versionName": "1.0.10",
+  "versionCode": 12,
+  "versionName": "1.0.11",
   "apkUrl": "https://drive.google.com/uc?export=download&id=17XvYljBwXW31q7T_c2T0Jmr7zrNs4YTt&confirm=t",
-  "sizeBytes": 53677566,
-  "sha256": "292a185e9ba8df51577531984851adc2d15a83b581561ee0386256225c32813a",
-  "notes": "One-tap notification cleanup with verified Google Messages promotional SMS read cleanup, including Android 15 hidden-preview support through SMS permission. Useful messages and mixed conversations stay unread."
+  "sizeBytes": 53678494,
+  "sha256": "e3b6c34311b80d9df2f5a17b50b8b23b7ab633cfbd01a18e2f616c62422a761b",
+  "notes": "Dedicated WhatsApp cleanup button on Home and in the notification ledger. Scan WhatsApp and WhatsApp Business, save useful previews, and clear detected promotional tray alerts while retaining calls, mixed chats and uncertain messages. WhatsApp chats are not marked read by Remy."
 }
