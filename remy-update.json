@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "packageName": "com.remy.reminders",
-  "versionCode": 13,
-  "versionName": "1.0.12",
+  "versionCode": 14,
+  "versionName": "1.0.13",
   "apkUrl": "https://drive.google.com/uc?export=download&id=17XvYljBwXW31q7T_c2T0Jmr7zrNs4YTt&confirm=t",
-  "sizeBytes": 53679286,
-  "sha256": "2ccd90ca361aab9e8416bfa9241b8f1118947758047ee13af48405fed5c793f4",
-  "notes": "Mail cleanup for Gmail and Outlook from Home and the notification ledger. Saves useful previews before clearing detected promotional alerts. Retains receipts, invoices, deadlines, mixed conversations and incomplete mail bundles. Email read status and mailbox contents are unchanged."
+  "sizeBytes": 53681658,
+  "sha256": "e84b8900332bdf1aa1832efc339da9fdcf93282910699bcc0f76cae1d09217ce",
+  "notes": "WhatsApp cleanup saves routine CRED, slice and other supported provider bill nudges under Bills, groups matching repeats and clears their tray alerts. Payment failures, overdue notices and mixed chats stay visible."
 }
