@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "packageName": "com.remy.reminders",
-  "versionCode": 14,
-  "versionName": "1.0.13",
+  "versionCode": 15,
+  "versionName": "1.0.14",
   "apkUrl": "https://drive.google.com/uc?export=download&id=17XvYljBwXW31q7T_c2T0Jmr7zrNs4YTt&confirm=t",
-  "sizeBytes": 53681658,
-  "sha256": "e84b8900332bdf1aa1832efc339da9fdcf93282910699bcc0f76cae1d09217ce",
-  "notes": "WhatsApp cleanup saves routine CRED, slice and other supported provider bill nudges under Bills, groups matching repeats and clears their tray alerts. Payment failures, overdue notices and mixed chats stay visible."
+  "sizeBytes": 53698450,
+  "sha256": "60a41b68abb3ca5444c353a342828daba14f23862ac7ab69d5e4cac27023bdd8",
+  "notes": "WhatsApp Clean tray recognizes routine CRED card-payment reminders and MobiKwik statement-ready messages, including their preventive fee and payment-status footers. Bills now reads the printed due date after Amount Due and honors the printed year."
 }
