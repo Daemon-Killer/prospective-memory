@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "packageName": "com.remy.reminders",
-  "versionCode": 16,
-  "versionName": "1.0.15",
+  "versionCode": 17,
+  "versionName": "1.0.16",
   "apkUrl": "https://drive.google.com/uc?export=download&id=17XvYljBwXW31q7T_c2T0Jmr7zrNs4YTt&confirm=t",
-  "sizeBytes": 53730150,
-  "sha256": "e8fd5ff3ac6130f2712a84e73233da38d87857c86c8438b5b672a750e257a63a",
-  "notes": "Clear SMS and mail tray alerts, clean automated WhatsApp messages, and see saved highlights, upcoming reminders and copyable scan logs."
+  "sizeBytes": 53751478,
+  "sha256": "fed873c459cb32634e7044d474b21dec097627da0aa6685d35f8e2f4445ef9fe",
+  "notes": "Improvements and fixes."
 }
