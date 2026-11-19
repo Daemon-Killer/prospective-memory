@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "packageName": "com.remy.reminders",
-  "versionCode": 18,
-  "versionName": "1.0.17",
+  "versionCode": 19,
+  "versionName": "1.0.18",
   "apkUrl": "https://drive.google.com/uc?export=download&id=17XvYljBwXW31q7T_c2T0Jmr7zrNs4YTt&confirm=t",
   "sizeBytes": 53751478,
-  "sha256": "739430f803aaf24aa9b783882feef8fc47a2e7575469aaa12d15bd966b4e2629",
+  "sha256": "7f9326e9a6f77b83358ecb7b25849bc3efda56ad7c2b4e3c50bb7473985d5ded",
   "notes": "Improvements and fixes."
 }
